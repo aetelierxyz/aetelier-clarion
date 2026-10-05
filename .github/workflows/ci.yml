@@ -89,11 +89,22 @@ jobs:
         with:
           workspaces: programs/clarion
 
+      - uses: actions/cache@v6
+        id: agave
+        with:
+          path: |
+            ~/.local/share/solana/install
+            ~/.cache/solana
+          key: agave-${{ runner.os }}-${{ env.AGAVE_VERSION }}
+
       - name: install agave
+        if: steps.agave.outputs.cache-hit != 'true'
         run: |
-          installer="$(curl -sSfL "https://release.anza.xyz/v${AGAVE_VERSION}/install")"
+          installer="$(curl -sSfL --retry 3 "https://release.anza.xyz/v${AGAVE_VERSION}/install")"
           sh -c "$installer"
-          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: agave on PATH
+        run: echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
 
       - name: cargo clippy (blocking)
         run: cargo clippy --locked --manifest-path programs/clarion/Cargo.toml --all-targets -- -D warnings

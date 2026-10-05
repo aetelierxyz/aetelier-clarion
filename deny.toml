@@ -1,8 +1,12 @@
+[graph]
+exclude-dev = true
+
 [advisories]
 version = 2
 yanked = "warn"
 ignore = [
     "RUSTSEC-2024-0436",
+    "RUSTSEC-2025-0141",
 ]
 
 [bans]
