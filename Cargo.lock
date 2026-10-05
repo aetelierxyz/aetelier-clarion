@@ -1248,23 +1248,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "clarion-probe"
-version = "0.1.0"
-dependencies = [
- "clap",
- "csv",
- "quinn",
- "rcgen",
- "reqwest",
- "rustls",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "tokio",
- "toml",
-]
-
-[[package]]
 name = "clarion-program-client"
 version = "0.1.0"
 dependencies = [
@@ -1281,6 +1264,25 @@ dependencies = [
  "solana-sdk-ids",
  "solana-transaction",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "clarion-pulsar"
+version = "0.1.0"
+dependencies = [
+ "bs58",
+ "clap",
+ "csv",
+ "fastrand",
+ "quinn",
+ "rcgen",
+ "reqwest",
+ "rustls",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "toml",
 ]
 
 [[package]]

@@ -1,19 +1,20 @@
-use clarion_probe::{
+use clarion_pulsar::{
     output::{CsvFile, OutputError},
-    probe::{HandshakeFailure, ProbeSample},
+    pulsar::{HandshakeFailure, PulsarSample},
 };
 
 use crate::support::{HEADER, STAMP, scratch_dir};
 
 const COMPLETED_ROW: &str = "1790000000123456,devnet,fra-1,\
                              F2K3Fm5Vm26tz7ENRmu1RetmC2K91Lciz1bVZG3b3J2V,192.0.2.10:8009,\
-                             192.0.2.10,0,true,48210,23950,\n";
+                             192.0.2.10,0,true,48210,\
+                             F2K3Fm5Vm26tz7ENRmu1RetmC2K91Lciz1bVZG3b3J2V,\n";
 const TIMED_OUT_ROW: &str = "1790000000123456,devnet,fra-1,\
                              F2K3Fm5Vm26tz7ENRmu1RetmC2K91Lciz1bVZG3b3J2V,192.0.2.10:8009,\
-                             192.0.2.10,1,false,0,0,timeout\n";
+                             192.0.2.10,1,false,0,,timeout\n";
 
-fn samples() -> Vec<ProbeSample> {
-    let completed = ProbeSample {
+fn samples() -> Vec<PulsarSample> {
+    let completed = PulsarSample {
         sampled_ts_us: 1_790_000_000_123_456,
         cluster: "devnet".to_owned(),
         vantage: "fra-1".to_owned(),
@@ -23,14 +24,14 @@ fn samples() -> Vec<ProbeSample> {
         attempt: 0,
         ok: true,
         handshake_us: 48_210,
-        rtt_us: 23_950,
+        peer_pubkey: Some("F2K3Fm5Vm26tz7ENRmu1RetmC2K91Lciz1bVZG3b3J2V".to_owned()),
         err: None,
     };
-    let timed_out = ProbeSample {
+    let timed_out = PulsarSample {
         attempt: 1,
         ok: false,
         handshake_us: 0,
-        rtt_us: 0,
+        peer_pubkey: None,
         err: Some(HandshakeFailure::Timeout),
         ..completed.clone()
     };
@@ -39,17 +40,20 @@ fn samples() -> Vec<ProbeSample> {
 
 #[test]
 fn csv_is_written_under_a_created_directory_with_the_stamped_name() {
-    let directory = scratch_dir("stamped-name").join("datasets/probe");
+    let directory = scratch_dir("stamped-name").join("datasets/clarion-pulsar");
 
     let mut file = CsvFile::create(&directory, "20260921T141320Z").unwrap();
     file.append(&samples()).unwrap();
 
-    assert_eq!(file.path(), directory.join("probe-20260921T141320Z.csv"));
+    assert_eq!(
+        file.path(),
+        directory.join("clarion-pulsar-20260921T141320Z.csv")
+    );
     assert_eq!(
         std::fs::read_to_string(file.path()).unwrap(),
-        "sampled_ts_us,cluster,vantage,pubkey,tpu_quic,gossip_ip,attempt,ok,handshake_us,rtt_us,err\n\
-         1790000000123456,devnet,fra-1,F2K3Fm5Vm26tz7ENRmu1RetmC2K91Lciz1bVZG3b3J2V,192.0.2.10:8009,192.0.2.10,0,true,48210,23950,\n\
-         1790000000123456,devnet,fra-1,F2K3Fm5Vm26tz7ENRmu1RetmC2K91Lciz1bVZG3b3J2V,192.0.2.10:8009,192.0.2.10,1,false,0,0,timeout\n"
+        "sampled_ts_us,cluster,vantage,pubkey,tpu_quic,gossip_ip,attempt,ok,handshake_us,peer_pubkey,err\n\
+         1790000000123456,devnet,fra-1,F2K3Fm5Vm26tz7ENRmu1RetmC2K91Lciz1bVZG3b3J2V,192.0.2.10:8009,192.0.2.10,0,true,48210,F2K3Fm5Vm26tz7ENRmu1RetmC2K91Lciz1bVZG3b3J2V,\n\
+         1790000000123456,devnet,fra-1,F2K3Fm5Vm26tz7ENRmu1RetmC2K91Lciz1bVZG3b3J2V,192.0.2.10:8009,192.0.2.10,1,false,0,,timeout\n"
     );
 }
 
@@ -58,7 +62,7 @@ fn run_without_targets_still_writes_the_header() {
     let directory = scratch_dir("header-only");
 
     let mut file = CsvFile::create(&directory, "20260921T141320Z").unwrap();
-    file.append(&[]).unwrap();
+    file.append::<PulsarSample>(&[]).unwrap();
 
     assert_eq!(
         std::fs::read_to_string(file.path())
@@ -115,14 +119,49 @@ fn directory_that_cannot_be_created_is_reported_at_creation() {
     std::fs::create_dir_all(&occupied).unwrap();
     let blocker = occupied.join("not-a-directory");
     std::fs::write(&blocker, b"").unwrap();
-    let directory = blocker.join("probe");
+    let directory = blocker.join("clarion-pulsar");
 
     let error = CsvFile::create(&directory, STAMP).unwrap_err();
 
     assert!(matches!(
         error,
         OutputError::Create { path: reported, .. }
-            if reported == directory.join("probe-20260921T141320Z.csv")
+            if reported == directory.join("clarion-pulsar-20260921T141320Z.csv")
     ));
     assert!(!directory.exists());
+}
+
+#[test]
+fn validators_file_is_created_beside_the_handshake_file_with_the_same_stamp() {
+    let directory = scratch_dir("validators-file");
+
+    let handshakes = CsvFile::create(&directory, STAMP).unwrap();
+    let validators = CsvFile::create_validators(&directory, STAMP).unwrap();
+
+    assert_eq!(validators.path().parent(), handshakes.path().parent());
+    assert_eq!(
+        validators.path(),
+        directory.join("clarion-pulsar-validators-20260921T141320Z.csv")
+    );
+    assert_eq!(
+        std::fs::read_to_string(validators.path()).unwrap(),
+        "sampled_ts_us,cluster,epoch,identity,vote_account,gossip,tpu_quic,version,\
+         activated_stake_lamports,commission,delinquent,last_vote,root_slot,epoch_credits,\
+         leader_slots,blocks_produced,scheduled_leader_slots\n"
+    );
+}
+
+#[test]
+fn existing_validators_file_is_never_overwritten() {
+    let directory = scratch_dir("validators-no-overwrite");
+    let first = CsvFile::create_validators(&directory, STAMP).unwrap();
+    std::fs::write(first.path(), b"kept").unwrap();
+
+    let error = CsvFile::create_validators(&directory, STAMP).unwrap_err();
+
+    assert!(matches!(
+        error,
+        OutputError::Create { path: reported, .. } if reported == first.path()
+    ));
+    assert_eq!(std::fs::read(first.path()).unwrap(), b"kept");
 }

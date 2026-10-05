@@ -1,20 +1,23 @@
 use std::{
+    collections::HashMap,
     io,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
-    path::{Path, PathBuf},
-    sync::Arc,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use quinn::{ConnectionError, Endpoint, TransportErrorCode, VarInt};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tokio::{sync::Semaphore, time};
+use tokio::{
+    task::{Id, JoinError, JoinSet},
+    time,
+};
 
 use crate::{
-    config::ProbeConfig,
+    config::PulsarConfig,
     output::{CsvFile, OutputError},
-    targets::Target,
+    schedule::{Next, Scheduler, round_order, start_interval},
+    targets::{Target, distinct_addresses},
     tls::{self, TlsError},
 };
 
@@ -23,7 +26,7 @@ const IPV4_ANY: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 
 const IPV6_ANY: SocketAddr = SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0);
 
 #[derive(Debug, Error)]
-pub enum ProbeError {
+pub enum PulsarError {
     #[error(transparent)]
     Tls(#[from] TlsError),
     #[error("failed to bind the quic endpoint: {0}")]
@@ -73,7 +76,7 @@ impl HandshakeFailure {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ProbeSample {
+pub struct PulsarSample {
     pub sampled_ts_us: u64,
     pub cluster: String,
     pub vantage: String,
@@ -83,17 +86,17 @@ pub struct ProbeSample {
     pub attempt: u8,
     pub ok: bool,
     pub handshake_us: u64,
-    pub rtt_us: u64,
+    pub peer_pubkey: Option<String>,
     pub err: Option<HandshakeFailure>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct Handshake {
     handshake_us: u64,
-    rtt_us: u64,
+    peer_pubkey: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct Measurement {
     sampled_ts_us: u64,
     outcome: Result<Handshake, HandshakeFailure>,
@@ -109,26 +112,32 @@ impl Measurement {
 }
 
 #[derive(Debug)]
-pub struct Prober {
+pub struct Pulsar {
     endpoint: Endpoint,
     endpoint_v6: Option<Endpoint>,
-    permits: Arc<Semaphore>,
     vantage: String,
     rounds: u8,
     round_spacing: Duration,
+    concurrency: u16,
+    start_interval: Duration,
     connect_timeout: Duration,
+    seed: u64,
 }
 
-impl Prober {
-    pub fn new(config: &ProbeConfig) -> Result<Self, ProbeError> {
+impl Pulsar {
+    pub fn new(config: &PulsarConfig) -> Result<Self, PulsarError> {
         Self::bound(config, IPV4_ANY, IPV6_ANY)
     }
 
+    pub fn with_seed(self, seed: u64) -> Self {
+        Self { seed, ..self }
+    }
+
     fn bound(
-        config: &ProbeConfig,
+        config: &PulsarConfig,
         ipv4: SocketAddr,
         ipv6: SocketAddr,
-    ) -> Result<Self, ProbeError> {
+    ) -> Result<Self, PulsarError> {
         let mut endpoint = Endpoint::client(ipv4)?;
         let client_config = tls::client_config()?;
         endpoint.set_default_client_config(client_config.clone());
@@ -139,11 +148,13 @@ impl Prober {
         Ok(Self {
             endpoint,
             endpoint_v6,
-            permits: Arc::new(Semaphore::new(usize::from(config.concurrency))),
             vantage: config.vantage.clone(),
             rounds: config.rounds,
             round_spacing: config.round_spacing,
+            concurrency: config.concurrency,
+            start_interval: start_interval(config.max_starts_per_second),
             connect_timeout: config.connect_timeout,
+            seed: fastrand::u64(..),
         })
     }
 
@@ -151,20 +162,19 @@ impl Prober {
         &self,
         targets: &[Target],
         cluster: &str,
-        directory: &Path,
-        stamp: &str,
-    ) -> Result<(PathBuf, Vec<ProbeSample>), OutputError> {
-        let mut output = CsvFile::create(directory, stamp)?;
+        output: &mut CsvFile,
+    ) -> Result<Vec<PulsarSample>, OutputError> {
+        let mut rng = fastrand::Rng::with_seed(self.seed);
         let mut samples = Vec::new();
         for attempt in 0..self.rounds {
             if attempt > 0 {
                 time::sleep(self.round_spacing).await;
             }
-            let round = self.round(targets, cluster, attempt).await;
+            let round = self.round(targets, cluster, attempt, &mut rng).await;
             output.append(&round)?;
             samples.extend(round);
         }
-        Ok((output.path().to_path_buf(), samples))
+        Ok(samples)
     }
 
     pub async fn drain(&self) {
@@ -186,27 +196,54 @@ impl Prober {
         targets: &[Target],
         cluster: &str,
         attempt: u8,
-    ) -> Vec<ProbeSample> {
-        let pending: Vec<_> = targets
+        rng: &mut fastrand::Rng,
+    ) -> Vec<PulsarSample> {
+        let order = round_order(&distinct_addresses(targets), rng);
+        let measurements = self.sweep(order).await;
+        targets
             .iter()
             .map(|target| {
-                tokio::spawn(measure(
-                    self.endpoint_for(target.tpu_quic),
-                    Arc::clone(&self.permits),
-                    target.tpu_quic,
-                    self.connect_timeout,
-                ))
+                let measurement = measurements
+                    .get(&target.tpu_quic)
+                    .cloned()
+                    .unwrap_or_else(|| Measurement::failed(HandshakeFailure::Other));
+                self.sample(target, cluster, attempt, measurement)
             })
-            .collect();
-        let mut samples = Vec::with_capacity(targets.len());
-        for (target, measurement) in targets.iter().zip(pending) {
-            let measurement = match measurement.await {
-                Ok(measurement) => measurement,
-                Err(_) => Measurement::failed(HandshakeFailure::Other),
-            };
-            samples.push(self.sample(target, cluster, attempt, measurement));
+            .collect()
+    }
+
+    async fn sweep(&self, order: Vec<SocketAddr>) -> HashMap<SocketAddr, Measurement> {
+        let mut sweep = Sweep {
+            scheduler: Scheduler::new(order, self.concurrency, self.start_interval),
+            running: HashMap::new(),
+            measurements: HashMap::new(),
+        };
+        let mut tasks = JoinSet::new();
+        loop {
+            match sweep.scheduler.next(Instant::now()) {
+                Next::Start(address) => {
+                    let task = tasks.spawn(measure(
+                        self.endpoint_for(address),
+                        address,
+                        self.connect_timeout,
+                    ));
+                    sweep.running.insert(task.id(), address);
+                }
+                Next::WaitUntil(at) => {
+                    tokio::select! {
+                        biased;
+                        Some(joined) = tasks.join_next_with_id() => sweep.settle(joined),
+                        () = time::sleep_until(at.into()) => {}
+                    }
+                }
+                Next::WaitForCompletion => match tasks.join_next_with_id().await {
+                    Some(joined) => sweep.settle(joined),
+                    None => break,
+                },
+                Next::Finished => break,
+            }
         }
-        samples
+        sweep.measurements
     }
 
     fn sample(
@@ -215,12 +252,12 @@ impl Prober {
         cluster: &str,
         attempt: u8,
         measurement: Measurement,
-    ) -> ProbeSample {
-        let (handshake_us, rtt_us, err) = match measurement.outcome {
-            Ok(handshake) => (handshake.handshake_us, handshake.rtt_us, None),
-            Err(failure) => (0, 0, Some(failure)),
+    ) -> PulsarSample {
+        let (handshake_us, peer_pubkey, err) = match measurement.outcome {
+            Ok(handshake) => (handshake.handshake_us, handshake.peer_pubkey, None),
+            Err(failure) => (0, None, Some(failure)),
         };
-        ProbeSample {
+        PulsarSample {
             sampled_ts_us: measurement.sampled_ts_us,
             cluster: cluster.to_owned(),
             vantage: self.vantage.clone(),
@@ -230,22 +267,37 @@ impl Prober {
             attempt,
             ok: err.is_none(),
             handshake_us,
-            rtt_us,
+            peer_pubkey,
             err,
+        }
+    }
+}
+
+struct Sweep {
+    scheduler: Scheduler,
+    running: HashMap<Id, SocketAddr>,
+    measurements: HashMap<SocketAddr, Measurement>,
+}
+
+impl Sweep {
+    fn settle(&mut self, joined: Result<(Id, Measurement), JoinError>) {
+        let (id, measurement) = match joined {
+            Ok(finished) => finished,
+            Err(error) => (error.id(), Measurement::failed(HandshakeFailure::Other)),
+        };
+        if let Some(address) = self.running.remove(&id) {
+            self.scheduler.complete(address);
+            self.measurements.insert(address, measurement);
         }
     }
 }
 
 async fn measure(
     endpoint: Option<Endpoint>,
-    permits: Arc<Semaphore>,
     address: SocketAddr,
     connect_timeout: Duration,
 ) -> Measurement {
     let Some(endpoint) = endpoint else {
-        return Measurement::failed(HandshakeFailure::Other);
-    };
-    let Ok(_permit) = permits.acquire().await else {
         return Measurement::failed(HandshakeFailure::Other);
     };
     let sampled_ts_us = unix_micros(SystemTime::now());
@@ -256,12 +308,13 @@ async fn measure(
             Err(_) => Err(HandshakeFailure::Timeout),
             Ok(Err(error)) => Err(HandshakeFailure::from(&error)),
             Ok(Ok(connection)) => {
-                let handshake = Handshake {
-                    handshake_us: micros(started.elapsed()),
-                    rtt_us: micros(connection.rtt()),
-                };
+                let handshake_us = micros(started.elapsed());
+                let peer_pubkey = tls::peer_pubkey(&connection);
                 connection.close(VarInt::from_u32(0), &[]);
-                Ok(handshake)
+                Ok(Handshake {
+                    handshake_us,
+                    peer_pubkey,
+                })
             }
         },
     };
@@ -288,15 +341,16 @@ mod tests {
     const IPV4_TARGET: &str = "192.0.2.1:8009";
     const IPV6_TARGET: &str = "[2001:db8::1]:8009";
 
-    fn config() -> ProbeConfig {
-        ProbeConfig {
+    fn config() -> PulsarConfig {
+        PulsarConfig {
             rpc_url: String::new(),
             vantage: "unit".to_owned(),
             rounds: 1,
             round_spacing: Duration::ZERO,
             concurrency: 1,
             connect_timeout: Duration::from_secs(1),
-            output_dir: PathBuf::new(),
+            max_starts_per_second: 100,
+            output_dir: std::path::PathBuf::new(),
         }
     }
 
@@ -393,17 +447,17 @@ mod tests {
 
     #[tokio::test]
     async fn targets_are_dialled_from_the_endpoint_of_their_own_family() {
-        let prober = Prober::new(&config()).unwrap();
+        let pulsar = Pulsar::new(&config()).unwrap();
 
-        let ipv4 = prober.endpoint_for(IPV4_TARGET.parse().unwrap()).unwrap();
-        let ipv6 = prober.endpoint_for(IPV6_TARGET.parse().unwrap());
+        let ipv4 = pulsar.endpoint_for(IPV4_TARGET.parse().unwrap()).unwrap();
+        let ipv6 = pulsar.endpoint_for(IPV6_TARGET.parse().unwrap());
 
         assert!(ipv4.local_addr().unwrap().is_ipv4());
         assert!(ipv6.is_none_or(|endpoint| endpoint.local_addr().unwrap().is_ipv6()));
     }
 
     #[tokio::test]
-    async fn ipv6_bind_failure_leaves_ipv4_probing_and_reports_ipv6_targets_as_other() {
+    async fn ipv6_bind_failure_leaves_ipv4_sampling_and_reports_ipv6_targets_as_other() {
         let taken = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         let unbindable = taken.local_addr().unwrap();
         let target = Target {
@@ -412,14 +466,28 @@ mod tests {
             gossip_ip: None,
         };
 
-        let prober = Prober::bound(&config(), IPV4_ANY, unbindable).unwrap();
-        let samples = prober.round(&[target], "localnet", 0).await;
+        let pulsar = Pulsar::bound(&config(), IPV4_ANY, unbindable).unwrap();
+        let samples = pulsar
+            .round(&[target], "localnet", 0, &mut fastrand::Rng::with_seed(1))
+            .await;
 
-        assert!(prober.endpoint_for(IPV4_TARGET.parse().unwrap()).is_some());
-        assert!(prober.endpoint_for(IPV6_TARGET.parse().unwrap()).is_none());
+        assert!(pulsar.endpoint_for(IPV4_TARGET.parse().unwrap()).is_some());
+        assert!(pulsar.endpoint_for(IPV6_TARGET.parse().unwrap()).is_none());
         assert_eq!(samples.len(), 1);
         assert!(!samples[0].ok);
         assert_eq!(samples[0].err, Some(HandshakeFailure::Other));
+        assert_eq!(samples[0].peer_pubkey, None);
+    }
+
+    #[tokio::test]
+    async fn start_rate_becomes_the_interval_between_starts() {
+        let pulsar = Pulsar::new(&PulsarConfig {
+            max_starts_per_second: 25,
+            ..config()
+        })
+        .unwrap();
+
+        assert_eq!(pulsar.start_interval, Duration::from_millis(40));
     }
 
     #[test]

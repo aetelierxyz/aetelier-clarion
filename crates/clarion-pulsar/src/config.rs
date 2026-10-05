@@ -9,10 +9,23 @@ use thiserror::Error;
 
 pub const DEFAULT_RPC_URL: &str = "https://api.devnet.solana.com";
 pub const DEFAULT_ROUNDS: u8 = 3;
-pub const DEFAULT_ROUND_SPACING_MS: u64 = 200;
+pub const DEFAULT_ROUND_SPACING_MS: u64 = 30_000;
+pub const MIN_ROUND_SPACING_MS: u64 = 30_000;
 pub const DEFAULT_CONCURRENCY: u16 = 64;
 pub const DEFAULT_CONNECT_TIMEOUT_MS: u64 = 2_000;
-pub const DEFAULT_OUTPUT_DIR: &str = "datasets/probe";
+pub const DEFAULT_MAX_STARTS_PER_SECOND: u16 = 100;
+pub const MAX_STARTS_PER_SECOND_LIMIT: u16 = 100;
+pub const DEFAULT_OUTPUT_DIR: &str = "datasets/clarion-pulsar";
+pub const FILE_KEYS: [&str; 8] = [
+    "rpc_url",
+    "vantage",
+    "rounds",
+    "round_spacing_ms",
+    "concurrency",
+    "connect_timeout_ms",
+    "max_starts_per_second",
+    "output_dir",
+];
 
 #[derive(Debug, Error)]
 pub enum ConfigError {
@@ -22,16 +35,25 @@ pub enum ConfigError {
         #[source]
         source: io::Error,
     },
-    #[error("failed to parse {path}: {source}")]
+    #[error("failed to parse {path} at line {line}, column {column}: {message}")]
     Parse {
         path: PathBuf,
-        #[source]
-        source: toml::de::Error,
+        line: usize,
+        column: usize,
+        message: String,
     },
     #[error("vantage is required: set it in the config file or pass --vantage")]
     MissingVantage,
     #[error("{field} must be at least 1")]
     Zero { field: &'static str },
+    #[error("{field} must be at least {minimum}")]
+    BelowMinimum { field: &'static str, minimum: u64 },
+    #[error("{field} must be between {minimum} and {maximum}")]
+    OutOfRange {
+        field: &'static str,
+        minimum: u64,
+        maximum: u64,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -43,6 +65,7 @@ pub struct FileConfig {
     pub round_spacing_ms: u64,
     pub concurrency: u16,
     pub connect_timeout_ms: u64,
+    pub max_starts_per_second: u16,
     pub output_dir: PathBuf,
 }
 
@@ -55,6 +78,7 @@ impl Default for FileConfig {
             round_spacing_ms: DEFAULT_ROUND_SPACING_MS,
             concurrency: DEFAULT_CONCURRENCY,
             connect_timeout_ms: DEFAULT_CONNECT_TIMEOUT_MS,
+            max_starts_per_second: DEFAULT_MAX_STARTS_PER_SECOND,
             output_dir: PathBuf::from(DEFAULT_OUTPUT_DIR),
         }
     }
@@ -69,9 +93,16 @@ impl FileConfig {
             path: path.to_path_buf(),
             source,
         })?;
-        toml::from_str(&text).map_err(|source| ConfigError::Parse {
-            path: path.to_path_buf(),
-            source,
+        toml::from_str(&text).map_err(|source| {
+            let offset = source.span().map_or(0, |span| span.start);
+            let before = text.get(..offset).unwrap_or(&text);
+            let line_start = before.rfind('\n').map_or(0, |newline| newline + 1);
+            ConfigError::Parse {
+                path: path.to_path_buf(),
+                line: before.matches('\n').count() + 1,
+                column: before[line_start..].chars().count() + 1,
+                message: source.message().to_owned(),
+            }
         })
     }
 }
@@ -83,17 +114,18 @@ pub struct Overrides {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProbeConfig {
+pub struct PulsarConfig {
     pub rpc_url: String,
     pub vantage: String,
     pub rounds: u8,
     pub round_spacing: Duration,
     pub concurrency: u16,
     pub connect_timeout: Duration,
+    pub max_starts_per_second: u16,
     pub output_dir: PathBuf,
 }
 
-impl ProbeConfig {
+impl PulsarConfig {
     pub fn resolve(
         mut file: FileConfig,
         overrides: Overrides,
@@ -119,6 +151,19 @@ impl ProbeConfig {
                 field: "connect_timeout_ms",
             });
         }
+        if file.round_spacing_ms < MIN_ROUND_SPACING_MS {
+            return Err(ConfigError::BelowMinimum {
+                field: "round_spacing_ms",
+                minimum: MIN_ROUND_SPACING_MS,
+            });
+        }
+        if !(1..=MAX_STARTS_PER_SECOND_LIMIT).contains(&file.max_starts_per_second) {
+            return Err(ConfigError::OutOfRange {
+                field: "max_starts_per_second",
+                minimum: 1,
+                maximum: u64::from(MAX_STARTS_PER_SECOND_LIMIT),
+            });
+        }
         Ok(Self {
             rpc_url: file.rpc_url,
             vantage,
@@ -126,6 +171,7 @@ impl ProbeConfig {
             round_spacing: Duration::from_millis(file.round_spacing_ms),
             concurrency: file.concurrency,
             connect_timeout: Duration::from_millis(file.connect_timeout_ms),
+            max_starts_per_second: file.max_starts_per_second,
             output_dir: file.output_dir,
         })
     }
@@ -149,10 +195,11 @@ mod tests {
         assert_eq!(file.rpc_url, "https://api.devnet.solana.com");
         assert_eq!(file.vantage, None);
         assert_eq!(file.rounds, 3);
-        assert_eq!(file.round_spacing_ms, 200);
+        assert_eq!(file.round_spacing_ms, 30_000);
         assert_eq!(file.concurrency, 64);
         assert_eq!(file.connect_timeout_ms, 2_000);
-        assert_eq!(file.output_dir, PathBuf::from("datasets/probe"));
+        assert_eq!(file.max_starts_per_second, 100);
+        assert_eq!(file.output_dir, PathBuf::from("datasets/clarion-pulsar"));
     }
 
     #[test]
@@ -192,7 +239,7 @@ mod tests {
 
     #[test]
     fn unreadable_file_reports_its_path() {
-        let path = Path::new("/nonexistent/clarion-probe.toml");
+        let path = Path::new("/nonexistent/clarion-pulsar.toml");
 
         let error = FileConfig::load(Some(path)).unwrap_err();
 
@@ -204,18 +251,19 @@ mod tests {
     #[test]
     fn resolved_defaults_carry_durations() {
         let config =
-            ProbeConfig::resolve(FileConfig::default(), vantage("fra-1")).unwrap();
+            PulsarConfig::resolve(FileConfig::default(), vantage("fra-1")).unwrap();
 
         assert_eq!(
             config,
-            ProbeConfig {
+            PulsarConfig {
                 rpc_url: "https://api.devnet.solana.com".to_owned(),
                 vantage: "fra-1".to_owned(),
                 rounds: 3,
-                round_spacing: Duration::from_millis(200),
+                round_spacing: Duration::from_secs(30),
                 concurrency: 64,
                 connect_timeout: Duration::from_secs(2),
-                output_dir: PathBuf::from("datasets/probe"),
+                max_starts_per_second: 100,
+                output_dir: PathBuf::from("datasets/clarion-pulsar"),
             }
         );
     }
@@ -232,7 +280,7 @@ mod tests {
             vantage: Some("from-flag".to_owned()),
         };
 
-        let config = ProbeConfig::resolve(file, overrides).unwrap();
+        let config = PulsarConfig::resolve(file, overrides).unwrap();
 
         assert_eq!(config.rpc_url, "http://flag.example:8899");
         assert_eq!(config.vantage, "from-flag");
@@ -246,7 +294,7 @@ mod tests {
             ..FileConfig::default()
         };
 
-        let config = ProbeConfig::resolve(file, Overrides::default()).unwrap();
+        let config = PulsarConfig::resolve(file, Overrides::default()).unwrap();
 
         assert_eq!(config.rpc_url, "http://file.example:8899");
         assert_eq!(config.vantage, "from-file");
@@ -254,7 +302,7 @@ mod tests {
 
     #[test]
     fn missing_vantage_is_an_error() {
-        let error = ProbeConfig::resolve(FileConfig::default(), Overrides::default())
+        let error = PulsarConfig::resolve(FileConfig::default(), Overrides::default())
             .unwrap_err();
 
         assert!(matches!(error, ConfigError::MissingVantage));
@@ -263,7 +311,7 @@ mod tests {
     #[test]
     fn blank_vantage_is_an_error() {
         let error =
-            ProbeConfig::resolve(FileConfig::default(), vantage("  ")).unwrap_err();
+            PulsarConfig::resolve(FileConfig::default(), vantage("  ")).unwrap_err();
 
         assert!(matches!(error, ConfigError::MissingVantage));
     }
@@ -275,7 +323,7 @@ mod tests {
             ..FileConfig::default()
         };
 
-        let error = ProbeConfig::resolve(file, vantage("fra-1")).unwrap_err();
+        let error = PulsarConfig::resolve(file, vantage("fra-1")).unwrap_err();
 
         assert!(matches!(error, ConfigError::Zero { field: "rounds" }));
     }
@@ -287,7 +335,7 @@ mod tests {
             ..FileConfig::default()
         };
 
-        let error = ProbeConfig::resolve(file, vantage("fra-1")).unwrap_err();
+        let error = PulsarConfig::resolve(file, vantage("fra-1")).unwrap_err();
 
         assert!(matches!(
             error,
@@ -304,7 +352,7 @@ mod tests {
             ..FileConfig::default()
         };
 
-        let error = ProbeConfig::resolve(file, vantage("fra-1")).unwrap_err();
+        let error = PulsarConfig::resolve(file, vantage("fra-1")).unwrap_err();
 
         assert!(matches!(
             error,
@@ -312,5 +360,100 @@ mod tests {
                 field: "connect_timeout_ms"
             }
         ));
+    }
+
+    #[test]
+    fn round_spacing_of_thirty_seconds_is_accepted() {
+        let file = FileConfig {
+            round_spacing_ms: 30_000,
+            ..FileConfig::default()
+        };
+
+        let config = PulsarConfig::resolve(file, vantage("fra-1")).unwrap();
+
+        assert_eq!(config.round_spacing, Duration::from_secs(30));
+    }
+
+    #[test]
+    fn round_spacing_below_thirty_seconds_is_rejected() {
+        for round_spacing_ms in [0, 200, 29_999] {
+            let file = FileConfig {
+                round_spacing_ms,
+                ..FileConfig::default()
+            };
+
+            let error = PulsarConfig::resolve(file, vantage("fra-1")).unwrap_err();
+
+            assert!(matches!(
+                error,
+                ConfigError::BelowMinimum {
+                    field: "round_spacing_ms",
+                    minimum: 30_000
+                }
+            ));
+        }
+    }
+
+    #[test]
+    fn start_rate_between_one_and_one_hundred_is_accepted() {
+        for max_starts_per_second in [1, 37, 100] {
+            let file = FileConfig {
+                max_starts_per_second,
+                ..FileConfig::default()
+            };
+
+            let config = PulsarConfig::resolve(file, vantage("fra-1")).unwrap();
+
+            assert_eq!(config.max_starts_per_second, max_starts_per_second);
+        }
+    }
+
+    #[test]
+    fn start_rate_outside_one_to_one_hundred_is_rejected() {
+        for max_starts_per_second in [0, 101, u16::MAX] {
+            let file = FileConfig {
+                max_starts_per_second,
+                ..FileConfig::default()
+            };
+
+            let error = PulsarConfig::resolve(file, vantage("fra-1")).unwrap_err();
+
+            assert!(matches!(
+                error,
+                ConfigError::OutOfRange {
+                    field: "max_starts_per_second",
+                    minimum: 1,
+                    maximum: 100
+                }
+            ));
+        }
+    }
+
+    #[test]
+    fn every_listed_key_is_a_file_field_and_every_field_is_listed() {
+        let document = FILE_KEYS
+            .iter()
+            .map(|key| match *key {
+                "rpc_url" | "vantage" | "output_dir" => format!("{key} = \"x\""),
+                _ => format!("{key} = 1"),
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let file: FileConfig = toml::from_str(&document).unwrap();
+
+        assert_eq!(
+            file,
+            FileConfig {
+                rpc_url: "x".to_owned(),
+                vantage: Some("x".to_owned()),
+                rounds: 1,
+                round_spacing_ms: 1,
+                concurrency: 1,
+                connect_timeout_ms: 1,
+                max_starts_per_second: 1,
+                output_dir: PathBuf::from("x"),
+            }
+        );
     }
 }

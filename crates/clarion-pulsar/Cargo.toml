@@ -1,15 +1,17 @@
 [package]
-name = "clarion-probe"
+name = "clarion-pulsar"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "TPU QUIC handshake RTT prober"
+description = "Solana TPU QUIC handshake latency sampler"
 publish = false
 
 [dependencies]
+bs58 = { workspace = true }
 clap = { workspace = true }
 csv = { workspace = true }
+fastrand = { workspace = true }
 quinn = { workspace = true }
 rcgen = { workspace = true }
 reqwest = { workspace = true }

@@ -1,4 +1,7 @@
-use std::net::{IpAddr, SocketAddr};
+use std::{
+    collections::HashSet,
+    net::{IpAddr, SocketAddr},
+};
 
 use crate::rpc::ClusterNode;
 
@@ -10,7 +13,21 @@ pub struct Target {
 }
 
 pub fn select_targets(nodes: &[ClusterNode]) -> Vec<Target> {
-    nodes.iter().filter_map(target_of).collect()
+    let mut seen = HashSet::new();
+    nodes
+        .iter()
+        .filter(|node| seen.insert(node.pubkey.as_str()))
+        .filter_map(target_of)
+        .collect()
+}
+
+pub fn distinct_addresses(targets: &[Target]) -> Vec<SocketAddr> {
+    let mut seen = HashSet::new();
+    targets
+        .iter()
+        .map(|target| target.tpu_quic)
+        .filter(|address| seen.insert(*address))
+        .collect()
 }
 
 fn target_of(node: &ClusterNode) -> Option<Target> {
@@ -36,6 +53,7 @@ mod tests {
             pubkey: pubkey.to_owned(),
             gossip: gossip.map(str::to_owned),
             tpu_quic: tpu_quic.map(str::to_owned),
+            version: None,
         }
     }
 
@@ -103,5 +121,37 @@ mod tests {
             .collect();
 
         assert_eq!(pubkeys, ["A", "C"]);
+    }
+
+    #[test]
+    fn repeated_pubkey_keeps_its_first_entry_only() {
+        let nodes = [
+            node("A", None, Some("192.0.2.1:8009")),
+            node("A", None, Some("192.0.2.2:8009")),
+        ];
+
+        let targets = select_targets(&nodes);
+
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].tpu_quic, "192.0.2.1:8009".parse().unwrap());
+    }
+
+    #[test]
+    fn identities_sharing_an_address_collapse_to_one_address_in_first_seen_order() {
+        let nodes = [
+            node("A", None, Some("192.0.2.1:8009")),
+            node("B", None, Some("198.51.100.7:8009")),
+            node("C", None, Some("192.0.2.1:8009")),
+            node("D", None, Some("192.0.2.1:8010")),
+        ];
+
+        let addresses = distinct_addresses(&select_targets(&nodes));
+
+        assert_eq!(
+            addresses,
+            ["192.0.2.1:8009", "198.51.100.7:8009", "192.0.2.1:8010"]
+                .map(|address| address.parse::<SocketAddr>().unwrap())
+                .to_vec()
+        );
     }
 }
