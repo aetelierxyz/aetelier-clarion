@@ -1,0 +1,75 @@
+{
+  "jsonrpc": "2.0",
+  "result": [
+    {
+      "featureSet": 3640012085,
+      "gossip": "192.0.2.10:8001",
+      "pubkey": "F2K3Fm5Vm26tz7ENRmu1RetmC2K91Lciz1bVZG3b3J2V",
+      "pubsub": "192.0.2.10:8900",
+      "rpc": "192.0.2.10:8899",
+      "serveRepair": "192.0.2.10:8012",
+      "shredVersion": 27350,
+      "tpu": "192.0.2.10:8003",
+      "tpuForwards": "192.0.2.10:8004",
+      "tpuForwardsQuic": "192.0.2.10:8010",
+      "tpuQuic": "192.0.2.10:8009",
+      "tpuVote": "192.0.2.10:8005",
+      "tvu": "192.0.2.10:8002",
+      "version": "3.1.13"
+    },
+    {
+      "featureSet": 3640012085,
+      "gossip": "192.0.2.20:8001",
+      "pubkey": "6WK8ze98CueYEekV3SopfDeUUeKcoB7AjVknciENUBZC",
+      "pubsub": null,
+      "rpc": null,
+      "serveRepair": "192.0.2.20:8012",
+      "shredVersion": 27350,
+      "tpu": "198.51.100.7:11222",
+      "tpuForwards": "198.51.100.7:11223",
+      "tpuForwardsQuic": "198.51.100.7:11229",
+      "tpuQuic": "198.51.100.7:11228",
+      "tpuVote": "192.0.2.20:8005",
+      "tvu": "192.0.2.20:8002",
+      "version": "3.1.13"
+    },
+    {
+      "featureSet": null,
+      "gossip": "192.0.2.30:8001",
+      "pubkey": "D1qNfH759x48mNvFoacjBzbso16tpyftzJGrFkvc52Uj",
+      "pubsub": null,
+      "rpc": null,
+      "serveRepair": null,
+      "shredVersion": 27350,
+      "tpu": null,
+      "tpuForwards": null,
+      "tpuForwardsQuic": null,
+      "tpuQuic": null,
+      "tpuVote": null,
+      "tvu": null,
+      "version": null
+    },
+    {
+      "gossip": "192.0.2.40:8001",
+      "pubkey": "3PCWRNyvSZnSi47hM9w88uF96jwiBAM9CoU5y6RA39em",
+      "shredVersion": 27350,
+      "tpu": "192.0.2.40:8003",
+      "version": "1.18.26"
+    },
+    {
+      "featureSet": 3640012085,
+      "gossip": null,
+      "pubkey": "HAzUQNXVVQ6qrAXBBTVHkkFouc8rBJz5DGiCKFrDtSa9",
+      "pubsub": null,
+      "rpc": null,
+      "shredVersion": 27350,
+      "tpuQuic": "203.0.113.50:8009",
+      "version": "3.1.13"
+    },
+    {
+      "pubkey": "3QpLzoyAR7Yav7Mmbmve64jFQCMcy9wjrL75W4cvXwAf",
+      "tpuQuic": "[2001:db8::60]:8009"
+    }
+  ],
+  "id": 1
+}
