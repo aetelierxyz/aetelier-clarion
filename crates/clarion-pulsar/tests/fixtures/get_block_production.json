@@ -1,0 +1,30 @@
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "context": {
+      "apiVersion": "3.1.13",
+      "slot": 1000
+    },
+    "value": {
+      "byIdentity": {
+        "F2K3Fm5Vm26tz7ENRmu1RetmC2K91Lciz1bVZG3b3J2V": [
+          8,
+          7
+        ],
+        "J69vQ4CoH3AA221Q8BGxAyPq2rXeDhqug5gSrVMG3wKJ": [
+          4,
+          4
+        ],
+        "too-short": [
+          2,
+          2
+        ]
+      },
+      "range": {
+        "firstSlot": 800,
+        "lastSlot": 1000
+      }
+    }
+  },
+  "id": 1
+}
