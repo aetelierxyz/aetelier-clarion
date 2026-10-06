@@ -1,0 +1,29 @@
+[workspace]
+
+[package]
+name = "clarion"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89.0"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[features]
+no-entrypoint = []
+
+[dependencies]
+borsh = { version = "1", features = ["derive"] }
+solana-program = "3"
+solana-system-interface = { version = "2", features = ["bincode"] }
+
+[dev-dependencies]
+solana-account = "3"
+solana-keypair = "3"
+solana-program-test = { version = "=3.1.12", features = ["agave-unstable-api"] }
+solana-signer = "3"
+solana-transaction = { version = "3", features = ["bincode"] }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))', 'cfg(feature, values("custom-heap", "custom-panic"))'] }
