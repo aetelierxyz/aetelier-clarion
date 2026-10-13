@@ -1,0 +1,5 @@
+{
+  "schema": "tracer.params.v1",
+  "version": 1,
+  "hold_ms": 60000
+}
