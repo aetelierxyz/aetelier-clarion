@@ -1248,6 +1248,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "clarion-formulae"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "clarion-program-client",
+ "serde",
+ "serde_json",
+ "solana-keypair",
+ "solana-program",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "clarion-program-client"
 version = "0.1.0"
 dependencies = [

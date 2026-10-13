@@ -7,6 +7,7 @@ use thiserror::Error;
 pub const LEAF_PREFIX: u8 = 0x00;
 pub const NODE_PREFIX: u8 = 0x01;
 pub const EMPTY_PREFIX: u8 = 0x02;
+pub const RESULT_ROW_SIZE: usize = 105;
 
 #[derive(BorshSerialize, BorshDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ResultRow {
@@ -25,18 +26,26 @@ pub struct DuplicateSignature {
     pub signature: Signature,
 }
 
+pub fn leaf_hash_bytes(bytes: &[u8]) -> [u8; 32] {
+    hashv(&[&[LEAF_PREFIX], bytes]).to_bytes()
+}
+
 pub fn leaf_hash(row: &ResultRow) -> [u8; 32] {
-    hashv(&[
-        &[LEAF_PREFIX],
-        &row.signature,
-        &[row.arm as u8],
-        &row.target_slot.to_le_bytes(),
-        &row.landed_slot.to_le_bytes(),
-        &row.cu_price_micro.to_le_bytes(),
-        &row.fee_lamports.to_le_bytes(),
-        &row.tip_lamports.to_le_bytes(),
-    ])
-    .to_bytes()
+    let mut bytes = [0u8; RESULT_ROW_SIZE];
+    bytes[..64].copy_from_slice(&row.signature);
+    bytes[64] = row.arm as u8;
+    let words = [
+        row.target_slot,
+        row.landed_slot,
+        row.cu_price_micro,
+        row.fee_lamports,
+        row.tip_lamports,
+    ];
+    let (slots, _) = bytes[65..].as_chunks_mut::<8>();
+    for (slot, word) in slots.iter_mut().zip(words) {
+        *slot = word.to_le_bytes();
+    }
+    leaf_hash_bytes(&bytes)
 }
 
 pub fn node_hash(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
@@ -45,6 +54,21 @@ pub fn node_hash(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
 
 pub fn empty_root() -> [u8; 32] {
     hashv(&[&[EMPTY_PREFIX]]).to_bytes()
+}
+
+pub fn merkle_root_of_leaves(leaves: &[[u8; 32]]) -> [u8; 32] {
+    let mut level = leaves.to_vec();
+    while level.len() > 1 {
+        level = level
+            .chunks(2)
+            .filter_map(|pair| {
+                pair.iter()
+                    .copied()
+                    .reduce(|left, right| node_hash(&left, &right))
+            })
+            .collect();
+    }
+    level.first().copied().unwrap_or_else(empty_root)
 }
 
 pub fn merkle_root(rows: &[ResultRow]) -> Result<[u8; 32], DuplicateSignature> {
@@ -59,18 +83,8 @@ pub fn merkle_root(rows: &[ResultRow]) -> Result<[u8; 32], DuplicateSignature> {
             signature: Signature::from(signature),
         });
     }
-    let mut level: Vec<[u8; 32]> = ordered.into_iter().map(leaf_hash).collect();
-    while level.len() > 1 {
-        level = level
-            .chunks(2)
-            .filter_map(|pair| {
-                pair.iter()
-                    .copied()
-                    .reduce(|left, right| node_hash(&left, &right))
-            })
-            .collect();
-    }
-    Ok(level.first().copied().unwrap_or_else(empty_root))
+    let leaves: Vec<[u8; 32]> = ordered.into_iter().map(leaf_hash).collect();
+    Ok(merkle_root_of_leaves(&leaves))
 }
 
 #[cfg(test)]
@@ -152,13 +166,63 @@ mod tests {
         let [first, ..] = rows();
         let encoded = borsh::to_vec(&first).unwrap();
 
-        assert_eq!(encoded.len(), 105);
+        assert_eq!(encoded.len(), RESULT_ROW_SIZE);
         assert_eq!(encoded[64], 0);
         assert_eq!(
             leaf_hash(&first),
             hashv(&[&[LEAF_PREFIX], &encoded]).to_bytes()
         );
+        assert_eq!(leaf_hash(&first), leaf_hash_bytes(&encoded));
         assert_eq!(leaf_hash(&first), hex(FIRST_LEAF_HEX));
+    }
+
+    #[test]
+    fn generic_leaf_is_the_sha256_of_0x00_and_the_bytes() {
+        assert_eq!(
+            leaf_hash_bytes(b""),
+            hex("6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d")
+        );
+        assert_eq!(
+            leaf_hash_bytes(b"abc"),
+            hex("609f6e36d2405585188d5cfd761f407c7cc46a7d3f314c88270469dde315fcd1")
+        );
+        assert_eq!(
+            leaf_hash_bytes(&std::array::from_fn::<u8, 32, _>(|index| index as u8)),
+            hex("699cacdb4c39d8e0bb1223352765a7f7acdc51dec6694f7b54c3d0a47f0cc409")
+        );
+    }
+
+    #[test]
+    fn root_of_leaves_matches_the_reference_tree() {
+        let leaves = [
+            leaf_hash_bytes(b""),
+            leaf_hash_bytes(b"abc"),
+            leaf_hash_bytes(&std::array::from_fn::<u8, 32, _>(|index| index as u8)),
+        ];
+
+        assert_eq!(merkle_root_of_leaves(&[]), empty_root());
+        assert_eq!(merkle_root_of_leaves(&leaves[..1]), leaves[0]);
+        assert_eq!(
+            merkle_root_of_leaves(&leaves[..2]),
+            hex("87c93eee22bfdd3e6dfed019ad8adc8a357e90bc6388d9ef0c2fe461e633204f")
+        );
+        assert_eq!(
+            merkle_root_of_leaves(&leaves),
+            hex("46f4b3c50202c8893676470fcc99cfc5b3ad37461f8e50cc333dcafb2ccad2af")
+        );
+        assert_eq!(
+            merkle_root_of_leaves(&leaves),
+            node_hash(&node_hash(&leaves[0], &leaves[1]), &leaves[2])
+        );
+    }
+
+    #[test]
+    fn row_root_is_the_generic_root_of_the_sorted_row_leaves() {
+        let sorted = rows();
+        let leaves: Vec<[u8; 32]> = sorted.iter().map(leaf_hash).collect();
+
+        assert_eq!(merkle_root(&rows()), Ok(merkle_root_of_leaves(&leaves)));
+        assert_eq!(merkle_root(&rows()), Ok(hex(FIVE_ROW_ROOT_HEX)));
     }
 
     #[test]
