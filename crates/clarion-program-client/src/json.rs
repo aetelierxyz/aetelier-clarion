@@ -1,6 +1,6 @@
 use std::fmt;
 
-use clarion::{ARM_COUNT, ArmAggregates, Window};
+use clarion::{ARM_COUNT, Arm, ArmAggregates, Window};
 use serde::{
     Deserialize, Deserializer, Serialize,
     de::{MapAccess, Visitor, value::MapAccessDeserializer},
@@ -16,13 +16,29 @@ pub enum JsonError {
     Aggregates(#[source] serde_json::Error),
     #[error("aggregates JSON holds {actual} arms, expected {expected}")]
     ArmCount { expected: usize, actual: usize },
+    #[error(
+        "aggregates JSON must hold each of fan_out, tip_lane, rpc_default and \
+         fixed_priority_fee exactly once"
+    )]
+    ArmSet,
     #[error("window does not render as JSON: {0}")]
     Window(#[source] serde_json::Error),
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(remote = "Arm", rename_all = "snake_case")]
+enum ArmName {
+    FanOut,
+    TipLane,
+    RpcDefault,
+    FixedPriorityFee,
+}
+
+#[derive(Serialize, Deserialize)]
 #[serde(remote = "ArmAggregates", deny_unknown_fields)]
 struct ArmFields {
+    #[serde(with = "ArmName")]
+    arm: Arm,
     tx_submitted: u32,
     tx_landed: u32,
     stl_p50_slots: u16,
@@ -35,12 +51,12 @@ struct ArmFields {
 
 #[derive(Serialize)]
 #[serde(transparent)]
-struct Arm(#[serde(with = "ArmFields")] ArmAggregates);
+struct ArmEntry(#[serde(with = "ArmFields")] ArmAggregates);
 
 struct ArmVisitor;
 
 impl<'de> Visitor<'de> for ArmVisitor {
-    type Value = Arm;
+    type Value = ArmEntry;
 
     fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(
@@ -48,12 +64,12 @@ impl<'de> Visitor<'de> for ArmVisitor {
         )
     }
 
-    fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Arm, A::Error> {
-        ArmFields::deserialize(MapAccessDeserializer::new(map)).map(Arm)
+    fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<ArmEntry, A::Error> {
+        ArmFields::deserialize(MapAccessDeserializer::new(map)).map(ArmEntry)
     }
 }
 
-impl<'de> Deserialize<'de> for Arm {
+impl<'de> Deserialize<'de> for ArmEntry {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         deserializer.deserialize_map(ArmVisitor)
     }
@@ -69,20 +85,28 @@ struct WindowFields {
     merkle_root: String,
     commit_slot: u64,
     reveal_slot: u64,
-    aggregates: [Arm; ARM_COUNT],
+    aggregates: [ArmEntry; ARM_COUNT],
     bump: u8,
 }
 
 pub fn parse_aggregates(text: &str) -> Result<[ArmAggregates; ARM_COUNT], JsonError> {
-    let arms: Vec<ArmAggregates> = serde_json::from_str::<Vec<Arm>>(text)
+    let mut entries: Vec<ArmAggregates> = serde_json::from_str::<Vec<ArmEntry>>(text)
         .map_err(JsonError::Aggregates)?
         .into_iter()
-        .map(|arm| arm.0)
+        .map(|entry| entry.0)
         .collect();
-    <[ArmAggregates; ARM_COUNT]>::try_from(arms).map_err(|arms| JsonError::ArmCount {
-        expected: ARM_COUNT,
-        actual: arms.len(),
-    })
+    entries.sort_by_key(|entry| entry.arm);
+    let aggregates =
+        <[ArmAggregates; ARM_COUNT]>::try_from(entries).map_err(|entries| {
+            JsonError::ArmCount {
+                expected: ARM_COUNT,
+                actual: entries.len(),
+            }
+        })?;
+    if aggregates.map(|entry| entry.arm) != Arm::ALL {
+        return Err(JsonError::ArmSet);
+    }
+    Ok(aggregates)
 }
 
 pub fn render_window(address: &Pubkey, window: &Window) -> Result<String, JsonError> {
@@ -95,7 +119,7 @@ pub fn render_window(address: &Pubkey, window: &Window) -> Result<String, JsonEr
         merkle_root: merkle_root_hex(&window.merkle_root),
         commit_slot: window.commit_slot,
         reveal_slot: window.reveal_slot,
-        aggregates: window.aggregates.map(Arm),
+        aggregates: window.aggregates.map(ArmEntry),
         bump: window.bump,
     };
     serde_json::to_string_pretty(&fields).map_err(JsonError::Window)
@@ -108,8 +132,12 @@ mod tests {
 
     use super::*;
 
-    fn arm(seed: u32) -> ArmAggregates {
+    const ARM_NAMES: [&str; ARM_COUNT] =
+        ["fan_out", "tip_lane", "rpc_default", "fixed_priority_fee"];
+
+    fn arm(arm: Arm, seed: u32) -> ArmAggregates {
         ArmAggregates {
+            arm,
             tx_submitted: 100 + seed,
             tx_landed: 90 + seed,
             stl_p50_slots: 1,
@@ -121,8 +149,9 @@ mod tests {
         }
     }
 
-    fn arm_json(seed: u32) -> Value {
+    fn arm_json(name: &str, seed: u32) -> Value {
         json!({
+            "arm": name,
             "tx_submitted": 100 + seed,
             "tx_landed": 90 + seed,
             "stl_p50_slots": 1,
@@ -134,8 +163,26 @@ mod tests {
         })
     }
 
+    fn arm_values(count: u32) -> Vec<Value> {
+        ARM_NAMES
+            .iter()
+            .cycle()
+            .zip(1..=count)
+            .map(|(name, seed)| arm_json(name, seed))
+            .collect()
+    }
+
     fn arms_json(count: u32) -> String {
-        Value::Array((1..=count).map(arm_json).collect()).to_string()
+        Value::Array(arm_values(count)).to_string()
+    }
+
+    fn aggregates() -> [ArmAggregates; ARM_COUNT] {
+        [
+            arm(Arm::FanOut, 1),
+            arm(Arm::TipLane, 2),
+            arm(Arm::RpcDefault, 3),
+            arm(Arm::FixedPriorityFee, 4),
+        ]
     }
 
     fn window() -> Window {
@@ -147,31 +194,74 @@ mod tests {
             merkle_root: [0x0a; 32],
             commit_slot: 1_500,
             reveal_slot: 1_651,
-            aggregates: [arm(1), arm(2), arm(3), arm(4)],
+            aggregates: aggregates(),
             bump: 253,
         }
     }
 
     #[test]
-    fn parses_four_arms_in_array_order() {
-        let aggregates = parse_aggregates(&arms_json(4)).unwrap();
+    fn parses_four_named_arms() {
+        assert_eq!(parse_aggregates(&arms_json(4)).unwrap(), aggregates());
+    }
 
-        assert_eq!(aggregates, [arm(1), arm(2), arm(3), arm(4)]);
+    #[test]
+    fn places_arms_by_name_whatever_their_array_order() {
+        let mut reversed = arm_values(4);
+        reversed.reverse();
+        let mut rotated = arm_values(4);
+        rotated.rotate_left(1);
+
+        for reordered in [reversed, rotated] {
+            assert_eq!(
+                parse_aggregates(&Value::Array(reordered).to_string()).unwrap(),
+                aggregates()
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_a_repeated_arm() {
+        let mut arms = arm_values(4);
+        arms[3]["arm"] = json!("fan_out");
+
+        let error = parse_aggregates(&Value::Array(arms).to_string()).unwrap_err();
+
+        assert!(matches!(error, JsonError::ArmSet), "{error}");
+        assert_eq!(
+            error.to_string(),
+            "aggregates JSON must hold each of fan_out, tip_lane, rpc_default and \
+             fixed_priority_fee exactly once"
+        );
+    }
+
+    #[test]
+    fn rejects_an_unknown_arm_name() {
+        let mut arms = arm_values(4);
+        arms[1]["arm"] = json!("jito");
+
+        let error = parse_aggregates(&Value::Array(arms).to_string()).unwrap_err();
+
+        assert!(matches!(error, JsonError::Aggregates(_)), "{error}");
+        assert!(
+            error.to_string().contains("unknown variant `jito`"),
+            "{error}"
+        );
     }
 
     #[test]
     fn parses_each_field_into_its_own_slot() {
         let text = r#"[
-            {"tx_submitted": 1, "tx_landed": 2, "stl_p50_slots": 3, "stl_p90_slots": 4,
-             "cu_price_p50_micro": 5, "cu_price_p90_micro": 6,
+            {"arm": "fan_out", "tx_submitted": 1, "tx_landed": 2, "stl_p50_slots": 3,
+             "stl_p90_slots": 4, "cu_price_p50_micro": 5, "cu_price_p90_micro": 6,
              "fee_total_lamports": 7, "tip_total_lamports": 8},
             {"tip_total_lamports": 18, "fee_total_lamports": 17,
              "cu_price_p90_micro": 16, "cu_price_p50_micro": 15,
-             "stl_p90_slots": 14, "stl_p50_slots": 13, "tx_landed": 12, "tx_submitted": 11},
-            {"tx_submitted": 0, "tx_landed": 0, "stl_p50_slots": 0, "stl_p90_slots": 0,
-             "cu_price_p50_micro": 0, "cu_price_p90_micro": 0,
+             "stl_p90_slots": 14, "stl_p50_slots": 13, "tx_landed": 12, "tx_submitted": 11,
+             "arm": "tip_lane"},
+            {"arm": "rpc_default", "tx_submitted": 0, "tx_landed": 0, "stl_p50_slots": 0,
+             "stl_p90_slots": 0, "cu_price_p50_micro": 0, "cu_price_p90_micro": 0,
              "fee_total_lamports": 0, "tip_total_lamports": 0},
-            {"tx_submitted": 4294967295, "tx_landed": 4294967295,
+            {"arm": "fixed_priority_fee", "tx_submitted": 4294967295, "tx_landed": 4294967295,
              "stl_p50_slots": 65535, "stl_p90_slots": 65535,
              "cu_price_p50_micro": 18446744073709551615,
              "cu_price_p90_micro": 18446744073709551615,
@@ -185,6 +275,7 @@ mod tests {
             aggregates,
             [
                 ArmAggregates {
+                    arm: Arm::FanOut,
                     tx_submitted: 1,
                     tx_landed: 2,
                     stl_p50_slots: 3,
@@ -195,6 +286,7 @@ mod tests {
                     tip_total_lamports: 8,
                 },
                 ArmAggregates {
+                    arm: Arm::TipLane,
                     tx_submitted: 11,
                     tx_landed: 12,
                     stl_p50_slots: 13,
@@ -204,8 +296,9 @@ mod tests {
                     fee_total_lamports: 17,
                     tip_total_lamports: 18,
                 },
-                ArmAggregates::default(),
+                ArmAggregates::empty(Arm::RpcDefault),
                 ArmAggregates {
+                    arm: Arm::FixedPriorityFee,
                     tx_submitted: u32::MAX,
                     tx_landed: u32::MAX,
                     stl_p50_slots: u16::MAX,
@@ -245,7 +338,7 @@ mod tests {
 
     #[test]
     fn landed_above_submitted_passes_parsing() {
-        let mut arms: Vec<Value> = (1..=4).map(arm_json).collect();
+        let mut arms = arm_values(4);
         arms[2]["tx_submitted"] = json!(10);
         arms[2]["tx_landed"] = json!(11);
 
@@ -258,6 +351,7 @@ mod tests {
     #[test]
     fn rejects_a_missing_field() {
         for field in [
+            "arm",
             "tx_submitted",
             "tx_landed",
             "stl_p50_slots",
@@ -267,7 +361,7 @@ mod tests {
             "fee_total_lamports",
             "tip_total_lamports",
         ] {
-            let mut arms: Vec<Value> = (1..=4).map(arm_json).collect();
+            let mut arms = arm_values(4);
             arms[1].as_object_mut().unwrap().remove(field).unwrap();
 
             let error = parse_aggregates(&Value::Array(arms).to_string()).unwrap_err();
@@ -279,7 +373,7 @@ mod tests {
 
     #[test]
     fn rejects_an_unknown_field() {
-        let mut arms: Vec<Value> = (1..=4).map(arm_json).collect();
+        let mut arms = arm_values(4);
         arms[0]["landing_probability"] = json!(1);
 
         let error = parse_aggregates(&Value::Array(arms).to_string()).unwrap_err();
@@ -297,7 +391,7 @@ mod tests {
             ("tip_total_lamports", json!(1.5)),
             ("cu_price_p50_micro", json!("7")),
         ] {
-            let mut arms: Vec<Value> = (1..=4).map(arm_json).collect();
+            let mut arms = arm_values(4);
             arms[3][field] = value;
 
             let error = parse_aggregates(&Value::Array(arms).to_string()).unwrap_err();
@@ -329,7 +423,7 @@ mod tests {
 
     #[test]
     fn positional_arm_is_rejected_as_a_sequence_with_its_position() {
-        let mut arms: Vec<Value> = (1..=4).map(arm_json).collect();
+        let mut arms = arm_values(4);
         arms[2] = json!([103, 93, 1, 4, 1_003, 9_003, 500_003, 250_003]);
 
         let error = parse_aggregates(&Value::Array(arms).to_string()).unwrap_err();
@@ -389,7 +483,7 @@ mod tests {
                 "merkle_root": "0a".repeat(32),
                 "commit_slot": 1_500,
                 "reveal_slot": 1_651,
-                "aggregates": [arm_json(1), arm_json(2), arm_json(3), arm_json(4)],
+                "aggregates": arm_values(4),
                 "bump": 253,
             })
         );
@@ -409,6 +503,7 @@ mod tests {
             "\"commit_slot\"",
             "\"reveal_slot\"",
             "\"aggregates\"",
+            "\"arm\"",
             "\"tx_submitted\"",
             "\"tx_landed\"",
             "\"stl_p50_slots\"",
@@ -431,10 +526,10 @@ mod tests {
         let extreme = Window {
             window_id: u64::MAX,
             slot_end: u64::MAX,
-            aggregates: [ArmAggregates {
+            aggregates: Arm::ALL.map(|id| ArmAggregates {
                 fee_total_lamports: u64::MAX,
-                ..arm(1)
-            }; ARM_COUNT],
+                ..arm(id, 1)
+            }),
             ..window()
         };
 

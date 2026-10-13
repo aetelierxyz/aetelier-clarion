@@ -1,4 +1,7 @@
-use clarion::{ClarionError, STATE_DISCRIMINATOR, STATE_SIZE, State, state_address};
+use clarion::{
+    ClarionError, MAX_GENESIS_LEAD_SLOTS, STATE_DISCRIMINATOR, STATE_SIZE, State,
+    state_address,
+};
 use solana_program_test::tokio;
 use solana_signer::Signer;
 use solana_system_interface::program as system_program;
@@ -44,7 +47,7 @@ async fn init_once() {
     );
     let intruder = harness.intruder.insecure_clone();
     let program = harness.program.insecure_clone();
-    let takeover = init_instruction(&intruder.pubkey(), 1, 2, 3);
+    let takeover = init_instruction(&intruder.pubkey(), GENESIS_SLOT + 1, 2, 1);
     assert_rejected(
         harness.send(takeover, &[&intruder, &program]).await,
         ClarionError::StateAlreadyInitialized,
@@ -128,7 +131,7 @@ async fn init_rejects_zero_params() {
     );
     assert_eq!(harness.account(&state_key()).await, None);
 
-    harness.init(0, 1, 1).await.unwrap();
+    harness.init(GENESIS_SLOT, 1, 1).await.unwrap();
     let state = harness.state().await;
     assert_eq!(
         (
@@ -136,37 +139,87 @@ async fn init_rejects_zero_params() {
             state.window_len,
             state.min_reveal_lag_slots
         ),
-        (0, 1, 1)
+        (GENESIS_SLOT, 1, 1)
     );
 }
 
 #[tokio::test]
-async fn init_rejects_bounds_overflowing_u64() {
+async fn init_rejects_a_reveal_lag_longer_than_the_window() {
     let mut harness = Harness::start().await;
 
-    for (genesis_slot, window_len, min_reveal_lag_slots) in [
-        (u64::MAX, 1, 1),
-        (u64::MAX - 5, 10, 1),
-        (0, u64::MAX, 1),
-        (GENESIS_SLOT, WINDOW_LEN, u64::MAX),
-        (u64::MAX - 1, 1, 1),
-        (0, u64::MAX - 1, 2),
-    ] {
+    assert_rejected(
+        harness.init(GENESIS_SLOT, WINDOW_LEN, WINDOW_LEN + 1).await,
+        ClarionError::RevealLagExceedsWindowLen,
+    );
+    assert_eq!(harness.account(&state_key()).await, None);
+
+    harness
+        .init(GENESIS_SLOT, WINDOW_LEN, WINDOW_LEN)
+        .await
+        .unwrap();
+    assert_eq!(harness.state().await.min_reveal_lag_slots, WINDOW_LEN);
+}
+
+#[tokio::test]
+async fn init_rejects_a_genesis_slot_in_the_past() {
+    let mut harness = Harness::start().await;
+    let current_slot = 1_000;
+    harness.warp_to(current_slot);
+
+    assert_rejected(
+        harness
+            .init(current_slot - 1, WINDOW_LEN, MIN_REVEAL_LAG_SLOTS)
+            .await,
+        ClarionError::GenesisSlotPassed,
+    );
+    assert_eq!(harness.account(&state_key()).await, None);
+
+    harness
+        .init(current_slot, WINDOW_LEN, MIN_REVEAL_LAG_SLOTS)
+        .await
+        .unwrap();
+    assert_eq!(harness.state().await.genesis_slot, current_slot);
+}
+
+#[tokio::test]
+async fn init_rejects_a_genesis_slot_beyond_the_lead_limit() {
+    let mut harness = Harness::start().await;
+    let current_slot = 1_000;
+    harness.warp_to(current_slot);
+    let furthest = current_slot + MAX_GENESIS_LEAD_SLOTS;
+
+    for genesis_slot in [furthest + 1, u64::MAX] {
         assert_rejected(
             harness
-                .init(genesis_slot, window_len, min_reveal_lag_slots)
+                .init(genesis_slot, WINDOW_LEN, MIN_REVEAL_LAG_SLOTS)
                 .await,
+            ClarionError::GenesisSlotTooFar,
+        );
+    }
+    assert_eq!(harness.account(&state_key()).await, None);
+
+    harness
+        .init(furthest, WINDOW_LEN, MIN_REVEAL_LAG_SLOTS)
+        .await
+        .unwrap();
+    assert_eq!(harness.state().await.genesis_slot, furthest);
+}
+
+#[tokio::test]
+async fn init_rejects_a_first_window_overflowing_u64() {
+    let mut harness = Harness::start().await;
+    let longest = u64::MAX - GENESIS_SLOT + 1;
+
+    for window_len in [longest + 1, u64::MAX] {
+        assert_rejected(
+            harness.init(GENESIS_SLOT, window_len, 1).await,
             ClarionError::WindowBoundsOverflow,
         );
     }
     assert_eq!(harness.account(&state_key()).await, None);
 
-    harness.init(u64::MAX - 2, 1, 1).await.unwrap();
-    assert_eq!(harness.state().await.genesis_slot, u64::MAX - 2);
-
-    let mut harness = Harness::start().await;
-    harness.init(0, u64::MAX - 1, 1).await.unwrap();
-    assert_eq!(harness.state().await.window_len, u64::MAX - 1);
+    harness.init(GENESIS_SLOT, longest, 1).await.unwrap();
+    assert_eq!(harness.state().await.window_len, longest);
 }
 
 #[tokio::test]

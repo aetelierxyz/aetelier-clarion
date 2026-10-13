@@ -8,7 +8,7 @@ use std::{
 use serde::Serialize;
 use thiserror::Error;
 
-pub const COLUMNS: [&str; 11] = [
+pub const COLUMNS: [&str; 12] = [
     "sampled_ts_us",
     "cluster",
     "vantage",
@@ -19,6 +19,7 @@ pub const COLUMNS: [&str; 11] = [
     "ok",
     "handshake_us",
     "peer_pubkey",
+    "peer_matches_pubkey",
     "err",
 ];
 
@@ -219,6 +220,7 @@ mod tests {
             ok: true,
             handshake_us: 48_210,
             peer_pubkey: Some("F2K3Fm5Vm26tz7ENRmu1RetmC2K91Lciz1bVZG3b3J2V".to_owned()),
+            peer_matches_pubkey: Some(true),
             err: None,
         }
     }
@@ -230,6 +232,7 @@ mod tests {
             ok: false,
             handshake_us: 0,
             peer_pubkey: None,
+            peer_matches_pubkey: None,
             err: Some(failure),
             ..ok_sample()
         }
@@ -355,13 +358,13 @@ mod tests {
     }
 
     #[test]
-    fn header_is_the_eleven_columns_in_order() {
+    fn header_is_the_twelve_columns_in_order() {
         let text = encode(&[]);
 
         assert_eq!(
             text,
             "sampled_ts_us,cluster,vantage,pubkey,tpu_quic,gossip_ip,attempt,ok,\
-             handshake_us,peer_pubkey,err\n"
+             handshake_us,peer_pubkey,peer_matches_pubkey,err\n"
         );
     }
 
@@ -418,7 +421,7 @@ mod tests {
             Some(
                 "1790000000123456,devnet,fra-1,F2K3Fm5Vm26tz7ENRmu1RetmC2K91Lciz1bVZG3b3J2V,\
                  198.51.100.7:8009,192.0.2.1,2,true,48210,\
-                 F2K3Fm5Vm26tz7ENRmu1RetmC2K91Lciz1bVZG3b3J2V,"
+                 F2K3Fm5Vm26tz7ENRmu1RetmC2K91Lciz1bVZG3b3J2V,true,"
             )
         );
     }
@@ -431,7 +434,7 @@ mod tests {
             text.lines().nth(1),
             Some(
                 "1790000000123456,devnet,fra-1,F2K3Fm5Vm26tz7ENRmu1RetmC2K91Lciz1bVZG3b3J2V,\
-                 198.51.100.7:8009,,0,false,0,,closed_by_peer"
+                 198.51.100.7:8009,,0,false,0,,,closed_by_peer"
             )
         );
     }
@@ -465,6 +468,13 @@ mod tests {
             failed_sample(HandshakeFailure::Timeout),
             PulsarSample {
                 vantage: "rack 4, row \"b\"".to_owned(),
+                ..ok_sample()
+            },
+            PulsarSample {
+                peer_pubkey: Some(
+                    "BrwXyt6bUR4mTkY7jMX2eebFLUZNoiAFZXFQtncL3VD5".to_owned(),
+                ),
+                peer_matches_pubkey: Some(false),
                 ..ok_sample()
             },
         ];

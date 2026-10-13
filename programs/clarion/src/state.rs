@@ -11,14 +11,34 @@ pub const WINDOW_DISCRIMINATOR: u8 = 2;
 
 pub const ARM_COUNT: usize = 4;
 
+pub const MAX_GENESIS_LEAD_SLOTS: u64 = 432_000;
+
 pub const STATE_SIZE: usize = 66;
-pub const ARM_AGGREGATES_SIZE: usize = 44;
-pub const WINDOW_SIZE: usize = 250;
+pub const ARM_AGGREGATES_SIZE: usize = 45;
+pub const WINDOW_SIZE: usize = 254;
 
 #[derive(
-    BorshSerialize, BorshDeserialize, Clone, Copy, Debug, Default, PartialEq, Eq,
+    BorshSerialize, BorshDeserialize, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord,
 )]
+pub enum Arm {
+    FanOut,
+    TipLane,
+    RpcDefault,
+    FixedPriorityFee,
+}
+
+impl Arm {
+    pub const ALL: [Self; ARM_COUNT] = [
+        Self::FanOut,
+        Self::TipLane,
+        Self::RpcDefault,
+        Self::FixedPriorityFee,
+    ];
+}
+
+#[derive(BorshSerialize, BorshDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ArmAggregates {
+    pub arm: Arm,
     pub tx_submitted: u32,
     pub tx_landed: u32,
     pub stl_p50_slots: u16,
@@ -27,6 +47,22 @@ pub struct ArmAggregates {
     pub cu_price_p90_micro: u64,
     pub fee_total_lamports: u64,
     pub tip_total_lamports: u64,
+}
+
+impl ArmAggregates {
+    pub const fn empty(arm: Arm) -> Self {
+        Self {
+            arm,
+            tx_submitted: 0,
+            tx_landed: 0,
+            stl_p50_slots: 0,
+            stl_p90_slots: 0,
+            cu_price_p50_micro: 0,
+            cu_price_p90_micro: 0,
+            fee_total_lamports: 0,
+            tip_total_lamports: 0,
+        }
+    }
 }
 
 #[derive(BorshSerialize, BorshDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -123,8 +159,9 @@ mod tests {
         }
     }
 
-    fn arm(seed: u32) -> ArmAggregates {
+    fn arm(arm: Arm, seed: u32) -> ArmAggregates {
         ArmAggregates {
+            arm,
             tx_submitted: seed + 10,
             tx_landed: seed,
             stl_p50_slots: 1,
@@ -145,24 +182,29 @@ mod tests {
             merkle_root: [9; 32],
             commit_slot: 1_500,
             reveal_slot: 1_650,
-            aggregates: [arm(1), arm(2), arm(3), arm(4)],
+            aggregates: [
+                arm(Arm::FanOut, 1),
+                arm(Arm::TipLane, 2),
+                arm(Arm::RpcDefault, 3),
+                arm(Arm::FixedPriorityFee, 4),
+            ],
             bump: 253,
         }
     }
 
     #[test]
     fn serialized_lengths_match_size_constants() {
-        let arm_bytes = borsh::to_vec(&ArmAggregates::default()).unwrap();
+        let arm_bytes = borsh::to_vec(&ArmAggregates::empty(Arm::FanOut)).unwrap();
         let state_bytes = borsh::to_vec(&state()).unwrap();
         let window_bytes = borsh::to_vec(&window()).unwrap();
 
         assert_eq!(arm_bytes.len(), ARM_AGGREGATES_SIZE);
-        assert_eq!(arm_bytes.len(), 44);
+        assert_eq!(arm_bytes.len(), 45);
         assert_eq!(state_bytes.len(), STATE_SIZE);
         assert_eq!(state_bytes.len(), 66);
         assert_eq!(window_bytes.len(), WINDOW_SIZE);
-        assert_eq!(window_bytes.len(), 250);
-        assert_eq!(ARM_COUNT * ARM_AGGREGATES_SIZE, 176);
+        assert_eq!(window_bytes.len(), 254);
+        assert_eq!(ARM_COUNT * ARM_AGGREGATES_SIZE, 180);
     }
 
     #[test]
@@ -207,23 +249,55 @@ mod tests {
         assert_eq!(bytes[25..57], [9; 32]);
         assert_eq!(bytes[57..65], 1_500u64.to_le_bytes());
         assert_eq!(bytes[65..73], 1_650u64.to_le_bytes());
-        assert_eq!(bytes[73..117], borsh::to_vec(&arm(1)).unwrap()[..]);
-        assert_eq!(bytes[205..249], borsh::to_vec(&arm(4)).unwrap()[..]);
-        assert_eq!(bytes[249], 253);
+        assert_eq!(
+            bytes[73..118],
+            borsh::to_vec(&arm(Arm::FanOut, 1)).unwrap()[..]
+        );
+        assert_eq!(
+            bytes[208..253],
+            borsh::to_vec(&arm(Arm::FixedPriorityFee, 4)).unwrap()[..]
+        );
+        assert_eq!(bytes[253], 253);
     }
 
     #[test]
     fn arm_layout_follows_field_order() {
-        let bytes = borsh::to_vec(&arm(5)).unwrap();
+        let bytes = borsh::to_vec(&arm(Arm::RpcDefault, 5)).unwrap();
 
-        assert_eq!(bytes[0..4], 15u32.to_le_bytes());
-        assert_eq!(bytes[4..8], 5u32.to_le_bytes());
-        assert_eq!(bytes[8..10], 1u16.to_le_bytes());
-        assert_eq!(bytes[10..12], 4u16.to_le_bytes());
-        assert_eq!(bytes[12..20], 5_000u64.to_le_bytes());
-        assert_eq!(bytes[20..28], 90_000u64.to_le_bytes());
-        assert_eq!(bytes[28..36], 123_456u64.to_le_bytes());
-        assert_eq!(bytes[36..44], 654_321u64.to_le_bytes());
+        assert_eq!(bytes[0], 2);
+        assert_eq!(bytes[1..5], 15u32.to_le_bytes());
+        assert_eq!(bytes[5..9], 5u32.to_le_bytes());
+        assert_eq!(bytes[9..11], 1u16.to_le_bytes());
+        assert_eq!(bytes[11..13], 4u16.to_le_bytes());
+        assert_eq!(bytes[13..21], 5_000u64.to_le_bytes());
+        assert_eq!(bytes[21..29], 90_000u64.to_le_bytes());
+        assert_eq!(bytes[29..37], 123_456u64.to_le_bytes());
+        assert_eq!(bytes[37..45], 654_321u64.to_le_bytes());
+    }
+
+    #[test]
+    fn arm_tags_follow_the_arm_index() {
+        for (index, arm) in Arm::ALL.into_iter().enumerate() {
+            assert_eq!(borsh::to_vec(&arm).unwrap(), [u8::try_from(index).unwrap()]);
+        }
+    }
+
+    #[test]
+    fn arm_decoding_rejects_an_unknown_tag() {
+        let mut bytes = borsh::to_vec(&arm(Arm::FanOut, 1)).unwrap();
+        bytes[0] = 4;
+
+        assert!(ArmAggregates::try_from_slice(&bytes).is_err());
+    }
+
+    #[test]
+    fn empty_arm_holds_its_arm_and_zero_counts() {
+        let empty = ArmAggregates::empty(Arm::TipLane);
+
+        assert_eq!(
+            borsh::to_vec(&empty).unwrap(),
+            [&[1][..], &[0; ARM_AGGREGATES_SIZE - 1]].concat()
+        );
     }
 
     #[test]

@@ -23,18 +23,18 @@ pub const AUTHORITY_LAMPORTS: u64 = 10_000_000_000;
 pub const MERKLE_ROOT_HEX: &str =
     "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
 pub const AGGREGATES_JSON: &str = r#"[
-    {"tx_submitted": 100, "tx_landed": 91, "stl_p50_slots": 1, "stl_p90_slots": 2,
-     "cu_price_p50_micro": 1000, "cu_price_p90_micro": 9000,
+    {"arm": "fan_out", "tx_submitted": 100, "tx_landed": 91, "stl_p50_slots": 1,
+     "stl_p90_slots": 2, "cu_price_p50_micro": 1000, "cu_price_p90_micro": 9000,
      "fee_total_lamports": 500000, "tip_total_lamports": 0},
-    {"tx_submitted": 200, "tx_landed": 192, "stl_p50_slots": 2, "stl_p90_slots": 4,
-     "cu_price_p50_micro": 2000, "cu_price_p90_micro": 18000,
+    {"arm": "tip_lane", "tx_submitted": 200, "tx_landed": 192, "stl_p50_slots": 2,
+     "stl_p90_slots": 4, "cu_price_p50_micro": 2000, "cu_price_p90_micro": 18000,
      "fee_total_lamports": 1000000, "tip_total_lamports": 250000},
-    {"tx_submitted": 300, "tx_landed": 293, "stl_p50_slots": 3, "stl_p90_slots": 6,
-     "cu_price_p50_micro": 0, "cu_price_p90_micro": 0,
+    {"arm": "rpc_default", "tx_submitted": 300, "tx_landed": 293, "stl_p50_slots": 3,
+     "stl_p90_slots": 6, "cu_price_p50_micro": 0, "cu_price_p90_micro": 0,
      "fee_total_lamports": 1500000, "tip_total_lamports": 0},
-    {"tx_submitted": 400, "tx_landed": 400, "stl_p50_slots": 4, "stl_p90_slots": 8,
-     "cu_price_p50_micro": 4000, "cu_price_p90_micro": 36000,
-     "fee_total_lamports": 2000000, "tip_total_lamports": 0}
+    {"arm": "fixed_priority_fee", "tx_submitted": 400, "tx_landed": 400,
+     "stl_p50_slots": 4, "stl_p90_slots": 8, "cu_price_p50_micro": 4000,
+     "cu_price_p90_micro": 36000, "fee_total_lamports": 2000000, "tip_total_lamports": 0}
 ]"#;
 
 pub struct Harness {
@@ -101,6 +101,13 @@ impl Harness {
         );
         self.send(instruction).await.unwrap();
         commit_slot
+    }
+
+    pub async fn reveal_once_lagged(&mut self, window_id: u64) -> u64 {
+        let reveal_slot = self.window(window_id).await.commit_slot + MIN_REVEAL_LAG_SLOTS;
+        self.warp_to(reveal_slot);
+        self.reveal(window_id, aggregates()).await.unwrap();
+        reveal_slot
     }
 
     pub async fn reveal(

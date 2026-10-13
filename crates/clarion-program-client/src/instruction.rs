@@ -46,13 +46,28 @@ pub fn commit(
             slot_end,
             merkle_root,
         },
-        vec![
-            AccountMeta::new(*authority, true),
-            AccountMeta::new(state_address(program_id).0, false),
-            AccountMeta::new(window_address(program_id, window_id).0, false),
-            AccountMeta::new_readonly(system_program::ID, false),
-        ],
+        commit_accounts(program_id, authority, window_id),
     )
+}
+
+fn commit_accounts(
+    program_id: &Pubkey,
+    authority: &Pubkey,
+    window_id: u64,
+) -> Vec<AccountMeta> {
+    let mut accounts = vec![
+        AccountMeta::new(*authority, true),
+        AccountMeta::new(state_address(program_id).0, false),
+        AccountMeta::new(window_address(program_id, window_id).0, false),
+        AccountMeta::new_readonly(system_program::ID, false),
+    ];
+    if let Some(previous_window_id) = window_id.checked_sub(1) {
+        accounts.push(AccountMeta::new_readonly(
+            window_address(program_id, previous_window_id).0,
+            false,
+        ));
+    }
+    accounts
 }
 
 pub fn reveal(
@@ -77,13 +92,16 @@ pub fn reveal(
 
 #[cfg(test)]
 mod tests {
+    use clarion::Arm;
+
     use super::*;
 
     const PROGRAM_ID: Pubkey = Pubkey::new_from_array([42; 32]);
     const AUTHORITY: Pubkey = Pubkey::new_from_array([9; 32]);
 
-    fn arm(seed: u32) -> ArmAggregates {
+    fn arm(arm: Arm, seed: u32) -> ArmAggregates {
         ArmAggregates {
+            arm,
             tx_submitted: 100 * seed,
             tx_landed: 90 * seed,
             stl_p50_slots: 1,
@@ -163,6 +181,11 @@ mod tests {
                     is_signer: false,
                     is_writable: false,
                 },
+                AccountMeta {
+                    pubkey: window_address(&PROGRAM_ID, 3).0,
+                    is_signer: false,
+                    is_writable: false,
+                },
             ]
         );
         assert_eq!(
@@ -177,8 +200,24 @@ mod tests {
     }
 
     #[test]
+    fn commit_of_window_zero_has_no_previous_window_account() {
+        let instruction = commit(&PROGRAM_ID, &AUTHORITY, 0, 1_000, 1_149, [8; 32]);
+
+        assert_eq!(instruction.accounts.len(), 4);
+        assert_eq!(
+            instruction.accounts.get(2).map(|meta| meta.pubkey),
+            Some(window_address(&PROGRAM_ID, 0).0)
+        );
+    }
+
+    #[test]
     fn reveal_accounts_follow_the_program_order_and_privileges() {
-        let aggregates = [arm(1), arm(2), arm(3), arm(4)];
+        let aggregates = [
+            arm(Arm::FanOut, 1),
+            arm(Arm::TipLane, 2),
+            arm(Arm::RpcDefault, 3),
+            arm(Arm::FixedPriorityFee, 4),
+        ];
 
         let instruction = reveal(&PROGRAM_ID, &AUTHORITY, 4, aggregates);
 
@@ -215,11 +254,15 @@ mod tests {
     #[test]
     fn window_account_follows_the_window_id() {
         let fifth = commit(&PROGRAM_ID, &AUTHORITY, 5, 0, 0, [0; 32]);
-        let sixth = reveal(&PROGRAM_ID, &AUTHORITY, 6, [arm(1); ARM_COUNT]);
+        let sixth = reveal(&PROGRAM_ID, &AUTHORITY, 6, Arm::ALL.map(|id| arm(id, 1)));
 
         assert_eq!(
             fifth.accounts.get(2).map(|meta| meta.pubkey),
             Some(window_address(&PROGRAM_ID, 5).0)
+        );
+        assert_eq!(
+            fifth.accounts.get(4).map(|meta| meta.pubkey),
+            Some(window_address(&PROGRAM_ID, 4).0)
         );
         assert_eq!(
             sixth.accounts.get(2).map(|meta| meta.pubkey),

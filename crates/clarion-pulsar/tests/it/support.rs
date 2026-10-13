@@ -37,7 +37,7 @@ use tokio::{
 pub const VANTAGE: &str = "test-vantage";
 pub const STAMP: &str = "20260921T141320Z";
 pub const HEADER: &str = "sampled_ts_us,cluster,vantage,pubkey,tpu_quic,gossip_ip,attempt,ok,\
-                          handshake_us,peer_pubkey,err\n";
+                          handshake_us,peer_pubkey,peer_matches_pubkey,err\n";
 pub const DEVNET_HASH: &str = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
 
 pub fn fixture(name: &str) -> Vec<u8> {

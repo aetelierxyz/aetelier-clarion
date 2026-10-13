@@ -8,6 +8,7 @@ description = "Instruction builders, account decoding and admin CLI for the clar
 publish = false
 
 [dependencies]
+borsh = { workspace = true }
 clap = { workspace = true }
 clarion = { path = "../../programs/clarion", features = ["no-entrypoint"] }
 serde = { workspace = true }
