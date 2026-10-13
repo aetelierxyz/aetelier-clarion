@@ -31,7 +31,7 @@ Config file keys (TOML, all optional except vantage):
 Output files in output_dir (<ts> is the UTC start, YYYYMMDDTHHMMSSZ):
   clarion-pulsar-<ts>.csv
       sampled_ts_us, cluster, vantage, pubkey, tpu_quic, gossip_ip, attempt, ok,
-      handshake_us, peer_pubkey, err
+      handshake_us, peer_pubkey, peer_matches_pubkey, err
   clarion-pulsar-validators-<ts>.csv
       sampled_ts_us, cluster, epoch, identity, vote_account, gossip, tpu_quic, version,
       activated_stake_lamports, commission, delinquent, last_vote, root_slot,
@@ -40,7 +40,12 @@ Output files in output_dir (<ts> is the UTC start, YYYYMMDDTHHMMSSZ):
       identity, leader_slots; written once per cluster and epoch and read instead of
       calling getLeaderSchedule while present and readable
 
-err values: timeout, refused, tls, closed_by_peer, other
+Handshake columns:
+  ok                   the QUIC handshake completed
+  peer_pubkey          ed25519 key the server proved in the handshake; empty when none
+  peer_matches_pubkey  peer_pubkey equals the gossip identity in pubkey; false when the
+                       server proved another key; empty when no key was proven
+  err                  timeout, refused, tls, closed_by_peer, other
 
 Pacing:
   one handshake per distinct tpu_quic address per sweep, copied to every identity on it

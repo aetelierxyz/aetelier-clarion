@@ -1,5 +1,5 @@
 use clarion_program_client::{
-    ARM_COUNT, AccountKind, ArmAggregates, ClarionError, DecodeError, STATE_SIZE, State,
+    AccountKind, Arm, ArmAggregates, ClarionError, DecodeError, STATE_SIZE, State,
     WINDOW_DISCRIMINATOR, WINDOW_SIZE, Window, commit, decode_state, decode_window,
     window_address, window_slots,
 };
@@ -46,7 +46,7 @@ async fn commit_on_the_decoded_grid_creates_the_window_and_advances_the_state() 
             merkle_root: merkle_root(),
             commit_slot,
             reveal_slot: 0,
-            aggregates: [ArmAggregates::default(); ARM_COUNT],
+            aggregates: Arm::ALL.map(ArmAggregates::empty),
             bump,
         })
     );
@@ -62,6 +62,7 @@ async fn commit_on_the_decoded_grid_creates_the_window_and_advances_the_state() 
 #[tokio::test]
 async fn consecutive_windows_land_in_their_own_accounts() {
     let (mut harness, first_commit_slot) = Harness::start_committed().await;
+    harness.reveal_once_lagged(0).await;
 
     let second_commit_slot = harness.commit_once_closed(1).await;
 
@@ -75,6 +76,32 @@ async fn consecutive_windows_land_in_their_own_accounts() {
     assert_eq!(second.commit_slot, second_commit_slot);
     assert_eq!(second.bump, window_address(&PROGRAM_ID, 1).1);
     assert_eq!(harness.state().await.next_window_id, 2);
+}
+
+#[tokio::test]
+async fn commit_before_the_previous_reveal_is_rejected_by_the_program() {
+    let (mut harness, _) = Harness::start_committed().await;
+    let authority = harness.authority.pubkey();
+    let state = harness.state().await;
+    let (slot_start, slot_end) = window_slots(&state, 1).unwrap();
+    harness.warp_to(slot_end + 1);
+
+    assert_rejected(
+        harness
+            .send(commit(
+                &PROGRAM_ID,
+                &authority,
+                1,
+                slot_start,
+                slot_end,
+                merkle_root(),
+            ))
+            .await,
+        ClarionError::PreviousWindowNotRevealed,
+    );
+
+    assert_eq!(harness.state().await, state);
+    assert!(!harness.exists(&window_key(1)).await);
 }
 
 #[tokio::test]

@@ -16,11 +16,12 @@ use crate::support::{
 
 const CLOSED_RPC_URL: &str = "http://127.0.0.1:1";
 const WINDOW_BASE64: &str = "AgMAAAAAAAAAggAAAAAAAACLAAAAAAAAAAABAgMEBQYHCAkKCwwNDg8Q\
-                             ERITFBUWFxgZGhscHR4fjAAAAAAAAACRAAAAAAAAAGQAAABbAAAAAQAC\
-                             AOgDAAAAAAAAKCMAAAAAAAAgoQcAAAAAAAAAAAAAAAAAyAAAAMAAAAAC\
-                             AAQA0AcAAAAAAABQRgAAAAAAAEBCDwAAAAAAkNADAAAAAAAsAQAAJQEA\
-                             AAMABgAAAAAAAAAAAAAAAAAAAAAAYOMWAAAAAAAAAAAAAAAAAJABAACQ\
-                             AQAABAAIAKAPAAAAAAAAoIwAAAAAAACAhB4AAAAAAAAAAAAAAAAA/A==";
+                             ERITFBUWFxgZGhscHR4fjAAAAAAAAACRAAAAAAAAAABkAAAAWwAAAAEA\
+                             AgDoAwAAAAAAACgjAAAAAAAAIKEHAAAAAAAAAAAAAAAAAAHIAAAAwAAA\
+                             AAIABADQBwAAAAAAAFBGAAAAAAAAQEIPAAAAAACQ0AMAAAAAAAIsAQAA\
+                             JQEAAAMABgAAAAAAAAAAAAAAAAAAAAAAYOMWAAAAAAAAAAAAAAAAAAOQ\
+                             AQAAkAEAAAQACACgDwAAAAAAAKCMAAAAAAAAgIQeAAAAAAAAAAAAAAAA\
+                             APw=";
 const INIT: [&str; 7] = [
     "init",
     "--genesis-slot",
@@ -53,12 +54,12 @@ fn written_key(test: &str, file: &str, keypair: &Keypair) -> PathBuf {
 
 fn window_account(owner: &str) -> Value {
     json!([{
-        "lamports": 2_630_880,
+        "lamports": 2_658_720,
         "data": [WINDOW_BASE64, "base64"],
         "owner": owner,
         "executable": false,
         "rentEpoch": 0,
-        "space": 250,
+        "space": 254,
     }])
 }
 

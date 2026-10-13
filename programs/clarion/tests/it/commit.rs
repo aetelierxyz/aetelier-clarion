@@ -1,16 +1,20 @@
 use clarion::{
-    ARM_COUNT, ArmAggregates, ClarionError, STATE_DISCRIMINATOR, State,
-    WINDOW_DISCRIMINATOR, WINDOW_SIZE, Window, state_address, window_address,
+    Arm, ArmAggregates, ClarionError, STATE_DISCRIMINATOR, State, WINDOW_DISCRIMINATOR,
+    WINDOW_SIZE, Window, state_address, window_address,
 };
+use solana_program::pubkey::Pubkey;
 use solana_program_test::tokio;
 use solana_signer::Signer;
 use solana_system_interface::program as system_program;
 
 use crate::support::{
     FOREIGN_PROGRAM_ID, GENESIS_SLOT, Harness, MERKLE_ROOT, MIN_REVEAL_LAG_SLOTS,
-    PROGRAM_ID, WINDOW_LEN, assert_rejected, commit_instruction, data_account,
-    grid_commit_instruction, state_key, window_end, window_key, window_start,
+    PROGRAM_ID, WINDOW_LEN, aggregates, assert_rejected, commit_instruction,
+    data_account, grid_commit_instruction, state_key, window_end, window_key,
+    window_start,
 };
+
+const STRAY_WINDOW_KEY: Pubkey = Pubkey::new_from_array([203; 32]);
 
 #[tokio::test]
 async fn commit_requires_authority() {
@@ -65,7 +69,7 @@ async fn commit_sequential() {
             merkle_root: MERKLE_ROOT,
             commit_slot,
             reveal_slot: 0,
-            aggregates: [ArmAggregates::default(); ARM_COUNT],
+            aggregates: Arm::ALL.map(ArmAggregates::empty),
             bump,
         })
     );
@@ -74,6 +78,7 @@ async fn commit_sequential() {
     assert_rejected(harness.commit(0).await, ClarionError::WindowIdNotSequential);
     assert_rejected(harness.commit(2).await, ClarionError::WindowIdNotSequential);
 
+    harness.reveal_after_lag(0).await;
     harness.commit(1).await.unwrap();
 
     let second = harness.window(1).await;
@@ -129,7 +134,70 @@ async fn commit_future_window() {
     harness.commit(0).await.unwrap();
     assert_eq!(harness.window(0).await.commit_slot, window_end(0) + 1);
 
+    harness.reveal_after_lag(0).await;
     assert_rejected(harness.commit(1).await, ClarionError::WindowNotClosed);
+}
+
+#[tokio::test]
+async fn commit_waits_for_the_previous_reveal() {
+    let (mut harness, _) = Harness::start_committed().await;
+    harness.warp_to(window_end(1) + 1);
+
+    assert_rejected(
+        harness.commit(1).await,
+        ClarionError::PreviousWindowNotRevealed,
+    );
+    assert_eq!(harness.state().await.next_window_id, 1);
+    assert_eq!(harness.account(&window_key(1)).await, None);
+
+    harness.reveal(0, aggregates()).await.unwrap();
+    harness.commit(1).await.unwrap();
+
+    assert_eq!(harness.window(1).await.commit_slot, window_end(1) + 1);
+    assert_eq!(harness.state().await.next_window_id, 2);
+}
+
+#[tokio::test]
+async fn commit_rejects_another_window_in_place_of_the_previous_one() {
+    let (mut harness, _) = Harness::start_committed().await;
+    harness.reveal_after_lag(0).await;
+    harness.warp_to(window_end(1) + 1);
+    harness.commit(1).await.unwrap();
+    harness.warp_to(window_end(2) + 1);
+    let authority = harness.authority.pubkey();
+    let revealed = harness.window(0).await;
+    let forged = Window {
+        window_id: 1,
+        bump: window_address(&PROGRAM_ID, 1).1,
+        ..revealed
+    };
+
+    let mut skipping = grid_commit_instruction(&authority, 2);
+    skipping.accounts[4].pubkey = window_key(0);
+    assert_rejected(
+        harness.send_as_authority(skipping).await,
+        ClarionError::WindowAddressMismatch,
+    );
+
+    for (owner, expected) in [
+        (*PROGRAM_ID, ClarionError::WindowAddressMismatch),
+        (FOREIGN_PROGRAM_ID, ClarionError::WindowOwnerMismatch),
+    ] {
+        harness.set_account(
+            &STRAY_WINDOW_KEY,
+            data_account(&owner, borsh::to_vec(&forged).unwrap()),
+        );
+        let mut substituted = grid_commit_instruction(&authority, 2);
+        substituted.accounts[4].pubkey = STRAY_WINDOW_KEY;
+        assert_rejected(harness.send_as_authority(substituted).await, expected);
+    }
+
+    assert_rejected(
+        harness.commit(2).await,
+        ClarionError::PreviousWindowNotRevealed,
+    );
+    assert_eq!(harness.state().await.next_window_id, 2);
+    assert_eq!(harness.account(&window_key(2)).await, None);
 }
 
 #[tokio::test]
@@ -144,6 +212,7 @@ async fn commit_succeeds_on_prefunded_window_address() {
     harness.fund(&window_key(1), overfunded).await;
 
     harness.commit(0).await.unwrap();
+    harness.reveal_after_lag(0).await;
     harness.commit(1).await.unwrap();
 
     let topped_up = harness.account(&window_key(0)).await.unwrap();

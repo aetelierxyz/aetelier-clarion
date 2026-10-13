@@ -1,12 +1,13 @@
 use std::sync::LazyLock;
 
 use clarion::{
-    ARM_COUNT, ArmAggregates, ClarionError, ClarionInstruction, State, Window,
+    ARM_COUNT, Arm, ArmAggregates, ClarionError, ClarionInstruction, State, Window,
     state_address, window_address, window_bounds,
 };
 use solana_account::{Account, AccountSharedData};
 use solana_keypair::Keypair;
 use solana_program::{
+    clock::Clock,
     instruction::{AccountMeta, Instruction, InstructionError},
     pubkey::Pubkey,
     rent::Rent,
@@ -74,6 +75,19 @@ impl Harness {
 
     pub fn warp_to(&mut self, slot: u64) {
         self.context.warp_to_slot(slot).unwrap();
+    }
+
+    pub async fn clock_slot(&mut self) -> u64 {
+        let clock: Clock = self.context.banks_client.get_sysvar().await.unwrap();
+        clock.slot
+    }
+
+    pub async fn reveal_after_lag(&mut self, window_id: u64) -> u64 {
+        let earliest = self.window(window_id).await.commit_slot + MIN_REVEAL_LAG_SLOTS;
+        let reveal_slot = earliest.max(self.clock_slot().await + 1);
+        self.warp_to(reveal_slot);
+        self.reveal(window_id, aggregates()).await.unwrap();
+        reveal_slot
     }
 
     pub fn set_account(&mut self, address: &Pubkey, account: Account) {
@@ -236,12 +250,19 @@ fn init_accounts(authority: &Pubkey) -> Vec<AccountMeta> {
 }
 
 fn commit_accounts(authority: &Pubkey, window_id: u64) -> Vec<AccountMeta> {
-    vec![
+    let mut accounts = vec![
         AccountMeta::new(*authority, true),
         AccountMeta::new(state_key(), false),
         AccountMeta::new(window_key(window_id), false),
         AccountMeta::new_readonly(system_program::ID, false),
-    ]
+    ];
+    if let Some(previous_window_id) = window_id.checked_sub(1) {
+        accounts.push(AccountMeta::new_readonly(
+            window_key(previous_window_id),
+            false,
+        ));
+    }
+    accounts
 }
 
 fn reveal_accounts(authority: &Pubkey, window_id: u64) -> Vec<AccountMeta> {
@@ -309,11 +330,21 @@ pub fn reveal_instruction(
 }
 
 pub fn aggregates() -> [ArmAggregates; ARM_COUNT] {
-    [arm(1), arm(2), arm(3), arm(4)]
+    [
+        arm_aggregates(Arm::FanOut, 1),
+        arm_aggregates(Arm::TipLane, 2),
+        arm_aggregates(Arm::RpcDefault, 3),
+        arm_aggregates(Arm::FixedPriorityFee, 4),
+    ]
 }
 
-pub fn arm(seed: u32) -> ArmAggregates {
+pub fn uniform_aggregates(seed: u32) -> [ArmAggregates; ARM_COUNT] {
+    Arm::ALL.map(|arm| arm_aggregates(arm, seed))
+}
+
+pub fn arm_aggregates(arm: Arm, seed: u32) -> ArmAggregates {
     ArmAggregates {
+        arm,
         tx_submitted: 100 * seed,
         tx_landed: 90 * seed,
         stl_p50_slots: 1,

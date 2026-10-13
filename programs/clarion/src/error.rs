@@ -31,10 +31,15 @@ pub enum ClarionError {
     RevealLagNotElapsed = 124,
     LandedExceedsSubmitted = 125,
     ProgramSignatureMissing = 126,
+    PreviousWindowNotRevealed = 127,
+    ArmOutOfOrder = 128,
+    RevealLagExceedsWindowLen = 129,
+    GenesisSlotPassed = 130,
+    GenesisSlotTooFar = 131,
 }
 
 impl ClarionError {
-    const ALL: [Self; 26] = [
+    const ALL: [Self; 31] = [
         Self::InstructionDataMalformed,
         Self::AccountCountMismatch,
         Self::AuthoritySignatureMissing,
@@ -61,6 +66,11 @@ impl ClarionError {
         Self::RevealLagNotElapsed,
         Self::LandedExceedsSubmitted,
         Self::ProgramSignatureMissing,
+        Self::PreviousWindowNotRevealed,
+        Self::ArmOutOfOrder,
+        Self::RevealLagExceedsWindowLen,
+        Self::GenesisSlotPassed,
+        Self::GenesisSlotTooFar,
     ];
 
     pub const fn code(self) -> u32 {
@@ -107,6 +117,13 @@ impl fmt::Display for ClarionError {
             }
             Self::LandedExceedsSubmitted => "tx_landed exceeds tx_submitted",
             Self::ProgramSignatureMissing => "program id did not sign",
+            Self::PreviousWindowNotRevealed => "previous window is not revealed",
+            Self::ArmOutOfOrder => "aggregates are not in arm order",
+            Self::RevealLagExceedsWindowLen => "min_reveal_lag_slots exceeds window_len",
+            Self::GenesisSlotPassed => "genesis_slot is before the current slot",
+            Self::GenesisSlotTooFar => {
+                "genesis_slot is more than MAX_GENESIS_LEAD_SLOTS ahead of the current slot"
+            }
         };
         formatter.write_str(message)
     }
@@ -124,7 +141,7 @@ impl From<ClarionError> for ProgramError {
 mod tests {
     use super::*;
 
-    const CODES: [(ClarionError, u32); 26] = [
+    const CODES: [(ClarionError, u32); 31] = [
         (ClarionError::InstructionDataMalformed, 100),
         (ClarionError::AccountCountMismatch, 101),
         (ClarionError::AuthoritySignatureMissing, 102),
@@ -151,6 +168,11 @@ mod tests {
         (ClarionError::RevealLagNotElapsed, 124),
         (ClarionError::LandedExceedsSubmitted, 125),
         (ClarionError::ProgramSignatureMissing, 126),
+        (ClarionError::PreviousWindowNotRevealed, 127),
+        (ClarionError::ArmOutOfOrder, 128),
+        (ClarionError::RevealLagExceedsWindowLen, 129),
+        (ClarionError::GenesisSlotPassed, 130),
+        (ClarionError::GenesisSlotTooFar, 131),
     ];
 
     #[test]
@@ -177,7 +199,7 @@ mod tests {
         for (error, code) in CODES {
             assert_eq!(ClarionError::from_code(code), Some(error));
         }
-        for unassigned in [99, 122, 127] {
+        for unassigned in [99, 122, 132] {
             assert_eq!(ClarionError::from_code(unassigned), None);
         }
         let assigned = (0..=u32::from(u16::MAX))

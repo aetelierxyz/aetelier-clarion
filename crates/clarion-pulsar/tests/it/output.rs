@@ -8,10 +8,10 @@ use crate::support::{HEADER, STAMP, scratch_dir};
 const COMPLETED_ROW: &str = "1790000000123456,devnet,fra-1,\
                              F2K3Fm5Vm26tz7ENRmu1RetmC2K91Lciz1bVZG3b3J2V,192.0.2.10:8009,\
                              192.0.2.10,0,true,48210,\
-                             F2K3Fm5Vm26tz7ENRmu1RetmC2K91Lciz1bVZG3b3J2V,\n";
+                             F2K3Fm5Vm26tz7ENRmu1RetmC2K91Lciz1bVZG3b3J2V,true,\n";
 const TIMED_OUT_ROW: &str = "1790000000123456,devnet,fra-1,\
                              F2K3Fm5Vm26tz7ENRmu1RetmC2K91Lciz1bVZG3b3J2V,192.0.2.10:8009,\
-                             192.0.2.10,1,false,0,,timeout\n";
+                             192.0.2.10,1,false,0,,,timeout\n";
 
 fn samples() -> Vec<PulsarSample> {
     let completed = PulsarSample {
@@ -25,6 +25,7 @@ fn samples() -> Vec<PulsarSample> {
         ok: true,
         handshake_us: 48_210,
         peer_pubkey: Some("F2K3Fm5Vm26tz7ENRmu1RetmC2K91Lciz1bVZG3b3J2V".to_owned()),
+        peer_matches_pubkey: Some(true),
         err: None,
     };
     let timed_out = PulsarSample {
@@ -32,6 +33,7 @@ fn samples() -> Vec<PulsarSample> {
         ok: false,
         handshake_us: 0,
         peer_pubkey: None,
+        peer_matches_pubkey: None,
         err: Some(HandshakeFailure::Timeout),
         ..completed.clone()
     };
@@ -51,9 +53,9 @@ fn csv_is_written_under_a_created_directory_with_the_stamped_name() {
     );
     assert_eq!(
         std::fs::read_to_string(file.path()).unwrap(),
-        "sampled_ts_us,cluster,vantage,pubkey,tpu_quic,gossip_ip,attempt,ok,handshake_us,peer_pubkey,err\n\
-         1790000000123456,devnet,fra-1,F2K3Fm5Vm26tz7ENRmu1RetmC2K91Lciz1bVZG3b3J2V,192.0.2.10:8009,192.0.2.10,0,true,48210,F2K3Fm5Vm26tz7ENRmu1RetmC2K91Lciz1bVZG3b3J2V,\n\
-         1790000000123456,devnet,fra-1,F2K3Fm5Vm26tz7ENRmu1RetmC2K91Lciz1bVZG3b3J2V,192.0.2.10:8009,192.0.2.10,1,false,0,,timeout\n"
+        "sampled_ts_us,cluster,vantage,pubkey,tpu_quic,gossip_ip,attempt,ok,handshake_us,peer_pubkey,peer_matches_pubkey,err\n\
+         1790000000123456,devnet,fra-1,F2K3Fm5Vm26tz7ENRmu1RetmC2K91Lciz1bVZG3b3J2V,192.0.2.10:8009,192.0.2.10,0,true,48210,F2K3Fm5Vm26tz7ENRmu1RetmC2K91Lciz1bVZG3b3J2V,true,\n\
+         1790000000123456,devnet,fra-1,F2K3Fm5Vm26tz7ENRmu1RetmC2K91Lciz1bVZG3b3J2V,192.0.2.10:8009,192.0.2.10,1,false,0,,,timeout\n"
     );
 }
 

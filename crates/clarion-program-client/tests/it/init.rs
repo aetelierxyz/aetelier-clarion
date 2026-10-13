@@ -17,7 +17,7 @@ async fn init_creates_a_state_that_decodes_to_the_submitted_parameters() {
     let authority = harness.authority.pubkey();
 
     harness
-        .send(init(&PROGRAM_ID, &authority, 1_000, 150, 151))
+        .send(init(&PROGRAM_ID, &authority, 1_000, 150, 149))
         .await
         .unwrap();
 
@@ -32,7 +32,7 @@ async fn init_creates_a_state_that_decodes_to_the_submitted_parameters() {
             authority,
             genesis_slot: 1_000,
             window_len: 150,
-            min_reveal_lag_slots: 151,
+            min_reveal_lag_slots: 149,
             next_window_id: 0,
             bump,
         })
@@ -43,7 +43,7 @@ async fn init_creates_a_state_that_decodes_to_the_submitted_parameters() {
 async fn init_is_paid_by_the_authority_and_cosigned_by_the_program_keypair() {
     let mut harness = Harness::start().await;
     let authority = harness.authority.pubkey();
-    let instruction = init(&PROGRAM_ID, &authority, 1_000, 150, 151);
+    let instruction = init(&PROGRAM_ID, &authority, 1_000, 150, 149);
     assert_eq!(
         instruction.accounts.last(),
         Some(&AccountMeta::new_readonly(*PROGRAM_ID, true))
@@ -65,7 +65,7 @@ async fn init_is_paid_by_the_authority_and_cosigned_by_the_program_keypair() {
 async fn init_whose_program_account_does_not_sign_is_rejected() {
     let mut harness = Harness::start().await;
     let authority = harness.authority.pubkey();
-    let mut instruction = init(&PROGRAM_ID, &authority, 1_000, 150, 151);
+    let mut instruction = init(&PROGRAM_ID, &authority, 1_000, 150, 149);
     for meta in instruction
         .accounts
         .iter_mut()
@@ -89,7 +89,15 @@ async fn second_init_is_rejected_and_leaves_the_state_unchanged() {
     let initialized = harness.state().await;
 
     assert_rejected(
-        harness.send(init(&PROGRAM_ID, &authority, 7, 8, 9)).await,
+        harness
+            .send(init(
+                &PROGRAM_ID,
+                &authority,
+                GENESIS_SLOT + 1,
+                WINDOW_LEN + 1,
+                MIN_REVEAL_LAG_SLOTS + 1,
+            ))
+            .await,
         ClarionError::StateAlreadyInitialized,
     );
 
