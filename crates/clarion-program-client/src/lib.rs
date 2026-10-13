@@ -16,8 +16,9 @@ pub use clarion::{
 pub use instruction::{commit, init, reveal};
 pub use json::{JsonError, parse_aggregates, render_window};
 pub use merkle::{
-    DuplicateSignature, EMPTY_PREFIX, LEAF_PREFIX, NODE_PREFIX, ResultRow, empty_root,
-    leaf_hash, merkle_root, node_hash,
+    DuplicateSignature, EMPTY_PREFIX, LEAF_PREFIX, NODE_PREFIX, RESULT_ROW_SIZE,
+    ResultRow, empty_root, leaf_hash, leaf_hash_bytes, merkle_root,
+    merkle_root_of_leaves, node_hash,
 };
 pub use root::{MERKLE_ROOT_HEX_LEN, RootError, merkle_root_hex, parse_merkle_root};
 pub use transaction::authority_transaction;

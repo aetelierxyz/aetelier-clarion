@@ -1,0 +1,5 @@
+{
+  "schema": "tracer.fillrates.v1",
+  "mode": "replay",
+  "symbols": 5
+}
