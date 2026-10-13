@@ -90,7 +90,7 @@ fn layout_error(
 
 #[cfg(test)]
 mod tests {
-    use clarion::{ARM_COUNT, ArmAggregates};
+    use clarion::{Arm, ArmAggregates};
     use solana_program::pubkey::Pubkey;
 
     use super::*;
@@ -108,7 +108,8 @@ mod tests {
     }
 
     fn window() -> Window {
-        let arm = ArmAggregates {
+        let template = ArmAggregates {
+            arm: Arm::FanOut,
             tx_submitted: 20,
             tx_landed: 18,
             stl_p50_slots: 1,
@@ -126,7 +127,7 @@ mod tests {
             merkle_root: [9; 32],
             commit_slot: 1_500,
             reveal_slot: 1_651,
-            aggregates: [arm; ARM_COUNT],
+            aggregates: Arm::ALL.map(|arm| ArmAggregates { arm, ..template }),
             bump: 253,
         }
     }
@@ -190,7 +191,7 @@ mod tests {
                 decode_window(candidate),
                 Err(DecodeError::Length {
                     account: AccountKind::Window,
-                    expected: 250,
+                    expected: 254,
                     actual,
                 })
             );

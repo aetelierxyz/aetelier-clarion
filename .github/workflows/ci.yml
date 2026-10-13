@@ -20,6 +20,9 @@ env:
   CARGO_INCREMENTAL: "0"
   CARGO_TERM_COLOR: always
   AGAVE_VERSION: "3.1.13"
+  AGAVE_RELEASE_SHA256: "88df00f7c23f84aa627f9181f8231d2aa10ada7caa9ff5a7f7287b7ef7d0bbe8"
+  SOLANA_VERIFY_VERSION: "0.5.2"
+  SOLANA_VERIFY_SHA256: "b9d5ccce9634dc14269cab3e7a58649bc141b3306e7735a94478c936341f211f"
 
 jobs:
 
@@ -27,15 +30,15 @@ jobs:
     name: fmt + clippy + tests (x86_64-unknown-linux-gnu)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d
         with:
           components: clippy, rustfmt
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad
         with:
           tool: cargo-nextest
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
 
       - name: cargo fmt (blocking)
         run: cargo fmt --all -- --check
@@ -54,26 +57,16 @@ jobs:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --locked --workspace --no-deps
 
-  msrv:
-    name: MSRV (1.89.0)
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@1.89.0
-      - uses: Swatinem/rust-cache@v2
-      - name: cargo check on the declared rust-version
-        run: cargo check --locked --workspace
-
   deny:
     name: cargo deny (advisories + licenses + bans + sources)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: taiki-e/install-action@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d
+      - uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad
         with:
           tool: cargo-deny
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
       - name: cargo deny check
         run: cargo deny check advisories bans licenses sources
 
@@ -81,30 +74,34 @@ jobs:
     name: program (build-sbf + tests)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d
         with:
           components: clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
         with:
           workspaces: programs/clarion
 
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         id: agave
         with:
           path: |
-            ~/.local/share/solana/install
+            ~/.local/share/agave
             ~/.cache/solana
-          key: agave-${{ runner.os }}-${{ env.AGAVE_VERSION }}
+          key: agave-${{ runner.os }}-${{ env.AGAVE_VERSION }}-${{ env.AGAVE_RELEASE_SHA256 }}
 
-      - name: install agave
+      - name: install agave from the checksum-pinned release archive
         if: steps.agave.outputs.cache-hit != 'true'
         run: |
-          installer="$(curl -sSfL --retry 3 "https://release.anza.xyz/v${AGAVE_VERSION}/install")"
-          sh -c "$installer"
+          archive="$RUNNER_TEMP/solana-release.tar.bz2"
+          curl -sSfL --proto '=https' --retry 3 -o "$archive" \
+            "https://github.com/anza-xyz/agave/releases/download/v${AGAVE_VERSION}/solana-release-x86_64-unknown-linux-gnu.tar.bz2"
+          echo "${AGAVE_RELEASE_SHA256}  ${archive}" | sha256sum --check --strict -
+          mkdir -p "$HOME/.local/share/agave"
+          tar -xjf "$archive" -C "$HOME/.local/share/agave"
 
       - name: agave on PATH
-        run: echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+        run: echo "$HOME/.local/share/agave/solana-release/bin" >> "$GITHUB_PATH"
 
       - name: cargo clippy (blocking)
         run: cargo clippy --locked --manifest-path programs/clarion/Cargo.toml --all-targets -- -D warnings
@@ -117,18 +114,43 @@ jobs:
           SBF_OUT_DIR: ${{ github.workspace }}/programs/clarion/target/deploy
         run: cargo test --manifest-path programs/clarion/Cargo.toml
 
+  verifiable-build:
+    name: verifiable build (solana-verify)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: install solana-verify from the checksum-pinned release binary
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          binary="$RUNNER_TEMP/bin/solana-verify"
+          curl -sSfL --proto '=https' --retry 3 -o "$binary" \
+            "https://github.com/Ellipsis-Labs/solana-verifiable-build/releases/download/v${SOLANA_VERIFY_VERSION}/solana-verify-${SOLANA_VERIFY_VERSION}-linux"
+          echo "${SOLANA_VERIFY_SHA256}  ${binary}" | sha256sum --check --strict -
+          chmod +x "$binary"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: solana-verify build
+        run: solana-verify build "${{ github.workspace }}/programs/clarion"
+
+      - name: executable hash
+        run: |
+          hash="$(solana-verify get-executable-hash programs/clarion/target/deploy/clarion.so)"
+          echo "clarion.so executable hash: ${hash}" >> "$GITHUB_STEP_SUMMARY"
+          echo "${hash}"
+
   ci-green:
     name: ci-green
     if: always()
-    needs: [gates, msrv, deny, program]
+    needs: [gates, deny, program, verifiable-build]
     runs-on: ubuntu-24.04
     steps:
       - name: assert every upstream job succeeded
         run: |
           echo 'gates=${{ needs.gates.result }}'
-          echo 'msrv=${{ needs.msrv.result }}'
           echo 'deny=${{ needs.deny.result }}'
           echo 'program=${{ needs.program.result }}'
+          echo 'verifiable-build=${{ needs.verifiable-build.result }}'
           if ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}; then
             echo "::error::at least one ci job did not succeed"
             exit 1

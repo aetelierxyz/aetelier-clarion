@@ -19,7 +19,7 @@ pub fn authority_transaction(
 
 #[cfg(test)]
 mod tests {
-    use clarion::{ARM_COUNT, ArmAggregates};
+    use clarion::{Arm, ArmAggregates};
 
     use super::*;
     use crate::instruction::{commit, init, reveal};
@@ -86,7 +86,7 @@ mod tests {
             &program().pubkey(),
             &authority.pubkey(),
             4,
-            [ArmAggregates::default(); ARM_COUNT],
+            Arm::ALL.map(ArmAggregates::empty),
         );
         assert_eq!(
             instruction.accounts.first().map(|meta| meta.is_writable),

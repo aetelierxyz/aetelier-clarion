@@ -33,7 +33,7 @@ impl ClarionInstruction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::ARM_AGGREGATES_SIZE;
+    use crate::state::{ARM_AGGREGATES_SIZE, Arm};
 
     fn init() -> ClarionInstruction {
         ClarionInstruction::Init {
@@ -53,7 +53,8 @@ mod tests {
     }
 
     fn reveal() -> ClarionInstruction {
-        let arm = ArmAggregates {
+        let template = ArmAggregates {
+            arm: Arm::FanOut,
             tx_submitted: 20,
             tx_landed: 18,
             stl_p50_slots: 1,
@@ -65,7 +66,7 @@ mod tests {
         };
         ClarionInstruction::Reveal {
             window_id: 4,
-            aggregates: [arm; ARM_COUNT],
+            aggregates: Arm::ALL.map(|arm| ArmAggregates { arm, ..template }),
         }
     }
 
@@ -91,6 +92,12 @@ mod tests {
         assert_eq!(reveal_bytes[0], 2);
         assert_eq!(reveal_bytes.len(), 1 + 8 + ARM_COUNT * ARM_AGGREGATES_SIZE);
         assert_eq!(reveal_bytes[1..9], 4u64.to_le_bytes());
+        for (index, arm) in Arm::ALL.into_iter().enumerate() {
+            assert_eq!(
+                reveal_bytes[9 + index * ARM_AGGREGATES_SIZE],
+                borsh::to_vec(&arm).unwrap()[0]
+            );
+        }
     }
 
     #[test]
@@ -121,6 +128,17 @@ mod tests {
                 Err(ClarionError::InstructionDataMalformed)
             );
         }
+    }
+
+    #[test]
+    fn unpack_rejects_an_unknown_arm_tag() {
+        let mut bytes = borsh::to_vec(&reveal()).unwrap();
+        bytes[9 + 3 * ARM_AGGREGATES_SIZE] = 4;
+
+        assert_eq!(
+            ClarionInstruction::unpack(&bytes),
+            Err(ClarionError::InstructionDataMalformed)
+        );
     }
 
     #[test]

@@ -16,9 +16,9 @@ use crate::{
     error::ClarionError,
     instruction::ClarionInstruction,
     state::{
-        ARM_COUNT, ArmAggregates, STATE_DISCRIMINATOR, STATE_SEED, STATE_SIZE, State,
-        WINDOW_DISCRIMINATOR, WINDOW_SEED, WINDOW_SIZE, Window, state_address,
-        window_address, window_bounds,
+        ARM_COUNT, Arm, ArmAggregates, MAX_GENESIS_LEAD_SLOTS, STATE_DISCRIMINATOR,
+        STATE_SEED, STATE_SIZE, State, WINDOW_DISCRIMINATOR, WINDOW_SEED, WINDOW_SIZE,
+        Window, state_address, window_address, window_bounds,
     },
 };
 
@@ -84,10 +84,16 @@ fn init(
     if min_reveal_lag_slots == 0 {
         return Err(ClarionError::MinRevealLagZero.into());
     }
-    let first_reveal_slot = window_bounds(genesis_slot, window_len, 0)
-        .and_then(|(_, slot_end)| slot_end.checked_add(1))
-        .and_then(|commit_slot| commit_slot.checked_add(min_reveal_lag_slots));
-    if first_reveal_slot.is_none() {
+    if min_reveal_lag_slots > window_len {
+        return Err(ClarionError::RevealLagExceedsWindowLen.into());
+    }
+    let genesis_lead = genesis_slot
+        .checked_sub(Clock::get()?.slot)
+        .ok_or(ClarionError::GenesisSlotPassed)?;
+    if genesis_lead > MAX_GENESIS_LEAD_SLOTS {
+        return Err(ClarionError::GenesisSlotTooFar.into());
+    }
+    if window_bounds(genesis_slot, window_len, 0).is_none() {
         return Err(ClarionError::WindowBoundsOverflow.into());
     }
     let (state_key, bump) = state_address(program_id);
@@ -127,15 +133,41 @@ fn commit(
     slot_end: u64,
     merkle_root: [u8; 32],
 ) -> ProgramResult {
-    let [
-        authority,
-        state_account,
-        window_account,
-        system_program_account,
-    ] = accounts
-    else {
-        return Err(ClarionError::AccountCountMismatch.into());
-    };
+    let (authority, state_account, window_account, system_program_account, previous) =
+        match (accounts, window_id.checked_sub(1)) {
+            (
+                [
+                    authority,
+                    state_account,
+                    window_account,
+                    system_program_account,
+                ],
+                None,
+            ) => (
+                authority,
+                state_account,
+                window_account,
+                system_program_account,
+                None,
+            ),
+            (
+                [
+                    authority,
+                    state_account,
+                    window_account,
+                    system_program_account,
+                    previous_window_account,
+                ],
+                Some(previous_window_id),
+            ) => (
+                authority,
+                state_account,
+                window_account,
+                system_program_account,
+                Some((previous_window_account, previous_window_id)),
+            ),
+            _ => return Err(ClarionError::AccountCountMismatch.into()),
+        };
     require_signer(authority)?;
     require_system_program(system_program_account)?;
     let mut state = load_state(program_id, state_account)?;
@@ -144,6 +176,13 @@ fn commit(
     }
     if window_id != state.next_window_id {
         return Err(ClarionError::WindowIdNotSequential.into());
+    }
+    if let Some((previous_window_account, previous_window_id)) = previous {
+        let previous_window =
+            load_window(program_id, previous_window_account, previous_window_id)?;
+        if !previous_window.is_revealed() {
+            return Err(ClarionError::PreviousWindowNotRevealed.into());
+        }
     }
     let (grid_start, grid_end) =
         window_bounds(state.genesis_slot, state.window_len, window_id)
@@ -185,7 +224,7 @@ fn commit(
         merkle_root,
         commit_slot,
         reveal_slot: 0,
-        aggregates: [ArmAggregates::default(); ARM_COUNT],
+        aggregates: Arm::ALL.map(ArmAggregates::empty),
         bump,
     };
     window.pack(&mut window_account.try_borrow_mut_data()?)?;
@@ -217,6 +256,9 @@ fn reveal(
         .is_some_and(|lag| lag >= state.min_reveal_lag_slots);
     if !lag_elapsed {
         return Err(ClarionError::RevealLagNotElapsed.into());
+    }
+    if aggregates.map(|entry| entry.arm) != Arm::ALL {
+        return Err(ClarionError::ArmOutOfOrder.into());
     }
     if aggregates
         .iter()

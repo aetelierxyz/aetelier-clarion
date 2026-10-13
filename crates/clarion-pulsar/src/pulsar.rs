@@ -87,6 +87,7 @@ pub struct PulsarSample {
     pub ok: bool,
     pub handshake_us: u64,
     pub peer_pubkey: Option<String>,
+    pub peer_matches_pubkey: Option<bool>,
     pub err: Option<HandshakeFailure>,
 }
 
@@ -257,6 +258,8 @@ impl Pulsar {
             Ok(handshake) => (handshake.handshake_us, handshake.peer_pubkey, None),
             Err(failure) => (0, None, Some(failure)),
         };
+        let peer_matches_pubkey =
+            peer_pubkey.as_ref().map(|proven| *proven == target.pubkey);
         PulsarSample {
             sampled_ts_us: measurement.sampled_ts_us,
             cluster: cluster.to_owned(),
@@ -268,6 +271,7 @@ impl Pulsar {
             ok: err.is_none(),
             handshake_us,
             peer_pubkey,
+            peer_matches_pubkey,
             err,
         }
     }
@@ -477,6 +481,7 @@ mod tests {
         assert!(!samples[0].ok);
         assert_eq!(samples[0].err, Some(HandshakeFailure::Other));
         assert_eq!(samples[0].peer_pubkey, None);
+        assert_eq!(samples[0].peer_matches_pubkey, None);
     }
 
     #[tokio::test]

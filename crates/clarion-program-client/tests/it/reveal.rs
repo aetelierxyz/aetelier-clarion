@@ -1,5 +1,5 @@
 use clarion_program_client::{
-    ArmAggregates, ClarionError, Window, decode_window, merkle_root_hex,
+    Arm, ArmAggregates, ClarionError, Window, decode_window, merkle_root_hex,
     parse_aggregates, render_window,
 };
 use serde_json::Value;
@@ -34,6 +34,7 @@ async fn reveal_writes_the_aggregates_parsed_from_json() {
     assert_eq!(
         revealed.aggregates[1],
         ArmAggregates {
+            arm: Arm::TipLane,
             tx_submitted: 200,
             tx_landed: 192,
             stl_p50_slots: 2,
@@ -48,9 +49,11 @@ async fn reveal_writes_the_aggregates_parsed_from_json() {
 }
 
 #[tokio::test]
-async fn reveal_of_the_third_window_leaves_the_first_two_committed() {
+async fn reveal_of_the_third_window_leaves_the_first_two_unchanged() {
     let (mut harness, _) = Harness::start_committed().await;
+    harness.reveal_once_lagged(0).await;
     harness.commit_once_closed(1).await;
+    harness.reveal_once_lagged(1).await;
     let commit_slot = harness.commit_once_closed(2).await;
     let earlier = [harness.window(0).await, harness.window(1).await];
     let committed = harness.window(2).await;
@@ -69,7 +72,22 @@ async fn reveal_of_the_third_window_leaves_the_first_two_committed() {
         }
     );
     assert_eq!([harness.window(0).await, harness.window(1).await], earlier);
-    assert!(earlier.iter().all(|window| !window.is_revealed()));
+    assert!(earlier.iter().all(Window::is_revealed));
+}
+
+#[tokio::test]
+async fn reordered_json_arms_land_in_arm_order() {
+    let (mut harness, commit_slot) = Harness::start_committed().await;
+    harness.warp_to(commit_slot + MIN_REVEAL_LAG_SLOTS);
+    let mut reversed: Vec<Value> = serde_json::from_str(AGGREGATES_JSON).unwrap();
+    reversed.reverse();
+    let parsed = parse_aggregates(&Value::Array(reversed).to_string()).unwrap();
+
+    harness.reveal(0, parsed).await.unwrap();
+
+    let revealed = harness.window(0).await;
+    assert_eq!(revealed.aggregates, aggregates());
+    assert_eq!(revealed.aggregates.map(|entry| entry.arm), Arm::ALL);
 }
 
 #[tokio::test]

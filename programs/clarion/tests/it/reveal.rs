@@ -1,10 +1,11 @@
-use clarion::{ARM_COUNT, ArmAggregates, ClarionError, Window};
+use clarion::{ARM_COUNT, Arm, ArmAggregates, ClarionError, Window};
 use solana_program_test::tokio;
 use solana_signer::Signer;
 
 use crate::support::{
-    Harness, MIN_REVEAL_LAG_SLOTS, PROGRAM_ID, aggregates, arm, assert_rejected,
-    data_account, reveal_instruction, window_end, window_key,
+    Harness, MIN_REVEAL_LAG_SLOTS, PROGRAM_ID, aggregates, arm_aggregates,
+    assert_rejected, data_account, reveal_instruction, uniform_aggregates, window_end,
+    window_key,
 };
 
 #[tokio::test]
@@ -65,26 +66,29 @@ async fn reveal_after_lag() {
     );
     assert!(revealed.is_revealed());
     assert_eq!(revealed.commit_slot, commit_slot);
-    assert_eq!(revealed.aggregates[3], arm(4));
+    assert_eq!(
+        revealed.aggregates[3],
+        arm_aggregates(Arm::FixedPriorityFee, 4)
+    );
     assert_eq!(harness.state().await, state);
 }
 
 #[tokio::test]
 async fn reveal_succeeds_for_a_nonzero_window_id() {
-    let mut harness = Harness::start_initialized().await;
+    let (mut harness, _) = Harness::start_committed().await;
+    harness.reveal_after_lag(0).await;
     let commit_slot = window_end(1) + 1;
     harness.warp_to(commit_slot);
-    harness.commit(0).await.unwrap();
     harness.commit(1).await.unwrap();
     let reveal_slot = commit_slot + MIN_REVEAL_LAG_SLOTS;
     harness.warp_to(reveal_slot);
     let untouched = harness.window(0).await;
 
-    harness.reveal(1, aggregates()).await.unwrap();
+    harness.reveal(1, uniform_aggregates(7)).await.unwrap();
 
     let revealed = harness.window(1).await;
     assert_eq!(revealed.reveal_slot, reveal_slot);
-    assert_eq!(revealed.aggregates, aggregates());
+    assert_eq!(revealed.aggregates, uniform_aggregates(7));
     assert_eq!(harness.window(0).await, untouched);
 }
 
@@ -100,15 +104,13 @@ async fn reveal_twice() {
         ClarionError::WindowAlreadyRevealed,
     );
     assert_rejected(
-        harness
-            .reveal(0, [ArmAggregates::default(); ARM_COUNT])
-            .await,
+        harness.reveal(0, Arm::ALL.map(ArmAggregates::empty)).await,
         ClarionError::WindowAlreadyRevealed,
     );
 
     harness.warp_to(commit_slot + 2 * MIN_REVEAL_LAG_SLOTS);
     assert_rejected(
-        harness.reveal(0, [arm(9); ARM_COUNT]).await,
+        harness.reveal(0, uniform_aggregates(9)).await,
         ClarionError::WindowAlreadyRevealed,
     );
     assert_eq!(harness.window(0).await, revealed);
@@ -137,6 +139,26 @@ async fn reveal_landed_exceeds_submitted() {
     }
     harness.reveal(0, all_landed).await.unwrap();
     assert_eq!(harness.window(0).await.aggregates, all_landed);
+}
+
+#[tokio::test]
+async fn reveal_rejects_aggregates_out_of_arm_order() {
+    let (mut harness, commit_slot) = Harness::start_committed().await;
+    harness.warp_to(commit_slot + MIN_REVEAL_LAG_SLOTS);
+    let committed = harness.window(0).await;
+    let mut swapped = aggregates();
+    swapped.swap(0, 1);
+    let mut repeated = aggregates();
+    repeated[3].arm = Arm::FanOut;
+
+    for out_of_order in [swapped, repeated] {
+        assert_rejected(
+            harness.reveal(0, out_of_order).await,
+            ClarionError::ArmOutOfOrder,
+        );
+    }
+
+    assert_eq!(harness.window(0).await, committed);
 }
 
 #[tokio::test]

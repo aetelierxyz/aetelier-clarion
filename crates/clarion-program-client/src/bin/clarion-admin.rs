@@ -103,8 +103,9 @@ enum Submission {
             long,
             value_name = "JSON",
             value_parser = parse_aggregates,
-            help = "Array of four objects with tx_submitted, tx_landed, stl_p50_slots, \
-                    stl_p90_slots, cu_price_p50_micro, cu_price_p90_micro, \
+            help = "Array of four objects, one per arm: fan_out, tip_lane, rpc_default, \
+                    fixed_priority_fee; each with arm, tx_submitted, tx_landed, \
+                    stl_p50_slots, stl_p90_slots, cu_price_p50_micro, cu_price_p90_micro, \
                     fee_total_lamports, tip_total_lamports"
         )]
         aggregates: [ArmAggregates; ARM_COUNT],
@@ -378,7 +379,7 @@ mod tests {
     use std::cell::RefCell;
 
     use clap::CommandFactory;
-    use clarion_program_client::{ClarionInstruction, STATE_DISCRIMINATOR};
+    use clarion_program_client::{Arm, ClarionInstruction, STATE_DISCRIMINATOR};
     use serde_json::{Value, json};
     use solana_rpc_client::{
         api::request::{RpcError, RpcRequest, RpcResponseErrorData},
@@ -403,9 +404,11 @@ mod tests {
     const PROGRAM_KEYPAIR_OPTION: [&str; 2] = ["--program-keypair", "program.json"];
     const AUTHORITY_OPTION: [&str; 2] = ["--authority", "authority.json"];
     const ROOT: &str = "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a";
-    const ARM: &str = r#"{"tx_submitted": 10, "tx_landed": 9, "stl_p50_slots": 1,
+    const ARM_NAMES: [&str; ARM_COUNT] =
+        ["fan_out", "tip_lane", "rpc_default", "fixed_priority_fee"];
+    const ARM_FIELDS: &str = r#""tx_submitted": 10, "tx_landed": 9, "stl_p50_slots": 1,
         "stl_p90_slots": 4, "cu_price_p50_micro": 1000, "cu_price_p90_micro": 9000,
-        "fee_total_lamports": 50000, "tip_total_lamports": 25000}"#;
+        "fee_total_lamports": 50000, "tip_total_lamports": 25000"#;
 
     fn parse(arguments: &[&str]) -> Result<Cli, clap::Error> {
         let globals = [
@@ -426,8 +429,18 @@ mod tests {
         [&INIT[..], &PROGRAM_KEYPAIR_OPTION].concat()
     }
 
+    fn arm_object(name: &str, fields: &str) -> String {
+        format!(r#"{{"arm": "{name}", {fields}}}"#)
+    }
+
     fn arms(count: usize) -> String {
-        format!("[{}]", vec![ARM; count].join(","))
+        let objects: Vec<String> = ARM_NAMES
+            .iter()
+            .cycle()
+            .take(count)
+            .map(|name| arm_object(name, ARM_FIELDS))
+            .collect();
+        format!("[{}]", objects.join(","))
     }
 
     fn program_id() -> Pubkey {
@@ -690,6 +703,7 @@ mod tests {
         let cli =
             parse(&["reveal", "--window-id", "3", "--aggregates", &arms(4)]).unwrap();
         let expected = ArmAggregates {
+            arm: Arm::FanOut,
             tx_submitted: 10,
             tx_landed: 9,
             stl_p50_slots: 1,
@@ -703,7 +717,7 @@ mod tests {
         assert!(matches!(
             cli.command,
             Command::Submit(Submission::Reveal { window_id: 3, aggregates })
-                if aggregates == [expected; ARM_COUNT]
+                if aggregates == Arm::ALL.map(|arm| ArmAggregates { arm, ..expected })
         ));
     }
 
@@ -932,17 +946,24 @@ mod tests {
 
     #[test]
     fn reveal_arguments_reach_the_instruction_after_reading_state_then_window() {
-        let text = format!(
-            "[{}]",
-            ["10", "20", "30", "40"]
-                .map(|submitted| ARM.replace(
-                    "\"tx_submitted\": 10",
-                    &format!("\"tx_submitted\": {submitted}")
-                ))
-                .join(",")
-        );
-        let aggregates = [10, 20, 30, 40].map(|tx_submitted| ArmAggregates {
-            tx_submitted,
+        let submitted = [10, 20, 30, 40];
+        let objects: Vec<String> = ARM_NAMES
+            .iter()
+            .zip(submitted)
+            .map(|(name, tx_submitted)| {
+                arm_object(
+                    name,
+                    &ARM_FIELDS.replace(
+                        "\"tx_submitted\": 10",
+                        &format!("\"tx_submitted\": {tx_submitted}"),
+                    ),
+                )
+            })
+            .collect();
+        let text = format!("[{}]", objects.join(","));
+        let aggregates = std::array::from_fn(|index| ArmAggregates {
+            arm: Arm::ALL[index],
+            tx_submitted: submitted[index],
             tx_landed: 9,
             stl_p50_slots: 1,
             stl_p90_slots: 4,
@@ -1069,7 +1090,7 @@ mod tests {
             landed(99),
             landed(122),
             preflight(122),
-            preflight(127),
+            preflight(132),
             ClientError::from(TransactionError::AccountInUse),
             ClientError::from(TransactionError::InstructionError(
                 0,

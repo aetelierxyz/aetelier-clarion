@@ -32,7 +32,6 @@ fn forged_state_data(authority: &Pubkey) -> Vec<u8> {
 async fn wrong_owner() {
     let mut harness = Harness::start().await;
     let commit_slot = window_end(0) + 1;
-    harness.warp_to(commit_slot);
     let authority = harness.authority.pubkey();
     let intruder = harness.intruder.insecure_clone();
 
@@ -42,6 +41,7 @@ async fn wrong_owner() {
         .init(GENESIS_SLOT, WINDOW_LEN, MIN_REVEAL_LAG_SLOTS)
         .await
         .unwrap();
+    harness.warp_to(commit_slot);
     harness.set_account(
         &STRAY_STATE_KEY,
         data_account(&FOREIGN_PROGRAM_ID, forged_state_data(&intruder.pubkey())),
@@ -89,7 +89,6 @@ async fn wrong_owner() {
 async fn wrong_pda() {
     let mut harness = Harness::start().await;
     let commit_slot = window_end(1) + 1;
-    harness.warp_to(commit_slot);
     let authority = harness.authority.pubkey();
     let intruder = harness.intruder.insecure_clone();
 
@@ -106,6 +105,7 @@ async fn wrong_pda() {
         .init(GENESIS_SLOT, WINDOW_LEN, MIN_REVEAL_LAG_SLOTS)
         .await
         .unwrap();
+    harness.warp_to(commit_slot);
     harness.set_account(
         &STRAY_STATE_KEY,
         data_account(&PROGRAM_ID, forged_state_data(&intruder.pubkey())),
@@ -126,7 +126,6 @@ async fn wrong_pda() {
     assert_eq!(harness.state().await.next_window_id, 0);
 
     harness.commit(0).await.unwrap();
-    harness.commit(1).await.unwrap();
     harness.warp_to(commit_slot + MIN_REVEAL_LAG_SLOTS);
     let committed = harness.window(0).await;
 
@@ -137,8 +136,8 @@ async fn wrong_pda() {
         ClarionError::StateAddressMismatch,
     );
 
-    let mut reveal = reveal_instruction(&authority, 0, aggregates());
-    reveal.accounts[2].pubkey = window_key(1);
+    let mut reveal = reveal_instruction(&authority, 1, aggregates());
+    reveal.accounts[2].pubkey = window_key(0);
     assert_rejected(
         harness.send_as_authority(reveal).await,
         ClarionError::WindowAddressMismatch,
@@ -155,7 +154,7 @@ async fn wrong_pda() {
         ClarionError::WindowAddressMismatch,
     );
     assert_eq!(harness.window(0).await, committed);
-    assert!(!harness.window(1).await.is_revealed());
+    assert_eq!(harness.account(&window_key(1)).await, None);
 }
 
 #[tokio::test]
@@ -281,6 +280,7 @@ async fn rejects_an_account_list_of_another_length() {
 
     for complete in [
         init_instruction(&authority, GENESIS_SLOT, WINDOW_LEN, MIN_REVEAL_LAG_SLOTS),
+        grid_commit_instruction(&authority, 0),
         grid_commit_instruction(&authority, 1),
         reveal_instruction(&authority, 0, aggregates()),
     ] {
@@ -303,7 +303,6 @@ async fn rejects_an_account_list_of_another_length() {
 #[tokio::test]
 async fn rejects_a_substituted_system_program() {
     let mut harness = Harness::start().await;
-    harness.warp_to(window_end(0) + 1);
     let authority = harness.authority.pubkey();
 
     let mut init =
@@ -319,6 +318,7 @@ async fn rejects_a_substituted_system_program() {
         .init(GENESIS_SLOT, WINDOW_LEN, MIN_REVEAL_LAG_SLOTS)
         .await
         .unwrap();
+    harness.warp_to(window_end(0) + 1);
     let mut commit = grid_commit_instruction(&authority, 0);
     commit.accounts[3].pubkey = FOREIGN_PROGRAM_ID;
     assert_rejected(

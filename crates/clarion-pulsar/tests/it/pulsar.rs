@@ -94,6 +94,30 @@ async fn proven_key_differs_from_the_claimed_identity_when_the_server_holds_anot
         Some(server.public_key.as_str())
     );
     assert_ne!(samples[0].peer_pubkey.as_deref(), Some(claimed.as_str()));
+    assert!(samples[0].ok);
+    assert_eq!(samples[0].peer_matches_pubkey, Some(false));
+}
+
+#[tokio::test]
+async fn proven_key_equal_to_the_claimed_identity_matches() {
+    let server = TpuServer::spawn(TPU_ALPN, Admission::Accept);
+    let pulsar = Pulsar::new(&pulsar_config(1, 4, GENEROUS_TIMEOUT)).unwrap();
+
+    let samples = pulsar
+        .run(
+            &[target(&server.public_key, server.address)],
+            "localnet",
+            &mut handshake_file("same-key"),
+        )
+        .await
+        .unwrap();
+
+    assert!(samples[0].ok);
+    assert_eq!(
+        samples[0].peer_pubkey.as_deref(),
+        Some(server.public_key.as_str())
+    );
+    assert_eq!(samples[0].peer_matches_pubkey, Some(true));
 }
 
 #[tokio::test]
@@ -119,6 +143,7 @@ async fn server_with_a_non_ed25519_key_completes_with_an_empty_peer_pubkey() {
 
     assert!(samples[0].ok);
     assert_eq!(samples[0].peer_pubkey, None);
+    assert_eq!(samples[0].peer_matches_pubkey, None);
 }
 
 #[tokio::test]
