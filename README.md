@@ -12,6 +12,7 @@ Solana commit-reveal program for per-window transaction landing aggregates, its 
 | Genesis slot | 510501377 | 510541775 |
 | Window length | 9,000 slots | 150 slots |
 | Minimum reveal lag | 150 slots | 150 slots |
+| Executable hash | `3ab598b7a74f31f87d0210b9f09c262df14f6ade6c0d30fc0ba39dee61dc5f4e` | `3ab598b7a74f31f87d0210b9f09c262df14f6ade6c0d30fc0ba39dee61dc5f4e` |
 
 ## Verifiable build
 
