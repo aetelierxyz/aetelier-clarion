@@ -16,3 +16,13 @@ pub use state::{
 
 #[cfg(not(feature = "no-entrypoint"))]
 solana_program::entrypoint!(process_instruction);
+
+#[cfg(not(feature = "no-entrypoint"))]
+solana_security_txt::security_txt! {
+    name: "clarion",
+    project_url: "https://github.com/aetelierxyz/aetelier-clarion",
+    contacts: "link:https://github.com/aetelierxyz/aetelier-clarion/security/advisories/new",
+    policy: "Report vulnerabilities privately through GitHub security advisories on aetelierxyz/aetelier-clarion. No bug bounty.",
+    preferred_languages: "en",
+    source_code: "https://github.com/aetelierxyz/aetelier-clarion"
+}
