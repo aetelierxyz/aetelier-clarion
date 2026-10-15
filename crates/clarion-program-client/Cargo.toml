@@ -9,13 +9,17 @@ publish = false
 
 [dependencies]
 base64 = { workspace = true }
+bincode = { workspace = true }
 borsh = { workspace = true }
 clap = { workspace = true }
 clarion = { path = "../../programs/clarion", features = ["no-entrypoint"] }
+reqwest = { workspace = true, features = ["blocking"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 solana-commitment-config = { workspace = true }
 solana-keypair = { workspace = true }
+solana-loader-v3-interface = { workspace = true }
 solana-program = { workspace = true }
 solana-rpc-client = { workspace = true }
 solana-sdk-ids = { workspace = true }
