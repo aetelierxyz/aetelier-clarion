@@ -36,10 +36,17 @@ pub enum ClarionError {
     RevealLagExceedsWindowLen = 129,
     GenesisSlotPassed = 130,
     GenesisSlotTooFar = 131,
+    AuthorityUnchanged = 132,
+    ProposalAddressMismatch = 133,
+    ProposalOwnerMismatch = 134,
+    ProposalDiscriminatorMismatch = 135,
+    ProposalDataMalformed = 136,
+    ProposalMissing = 137,
+    ProposedAuthorityMismatch = 138,
 }
 
 impl ClarionError {
-    const ALL: [Self; 31] = [
+    const ALL: [Self; 38] = [
         Self::InstructionDataMalformed,
         Self::AccountCountMismatch,
         Self::AuthoritySignatureMissing,
@@ -71,6 +78,13 @@ impl ClarionError {
         Self::RevealLagExceedsWindowLen,
         Self::GenesisSlotPassed,
         Self::GenesisSlotTooFar,
+        Self::AuthorityUnchanged,
+        Self::ProposalAddressMismatch,
+        Self::ProposalOwnerMismatch,
+        Self::ProposalDiscriminatorMismatch,
+        Self::ProposalDataMalformed,
+        Self::ProposalMissing,
+        Self::ProposedAuthorityMismatch,
     ];
 
     pub const fn code(self) -> u32 {
@@ -124,6 +138,21 @@ impl fmt::Display for ClarionError {
             Self::GenesisSlotTooFar => {
                 "genesis_slot is more than MAX_GENESIS_LEAD_SLOTS ahead of the current slot"
             }
+            Self::AuthorityUnchanged => "new authority is the stored authority",
+            Self::ProposalAddressMismatch => {
+                "authority proposal account is not the derived address"
+            }
+            Self::ProposalOwnerMismatch => {
+                "authority proposal account is not owned by the program"
+            }
+            Self::ProposalDiscriminatorMismatch => {
+                "authority proposal account has another discriminator"
+            }
+            Self::ProposalDataMalformed => {
+                "authority proposal account data does not decode"
+            }
+            Self::ProposalMissing => "authority proposal account does not exist",
+            Self::ProposedAuthorityMismatch => "signer is not the proposed authority",
         };
         formatter.write_str(message)
     }
@@ -141,7 +170,7 @@ impl From<ClarionError> for ProgramError {
 mod tests {
     use super::*;
 
-    const CODES: [(ClarionError, u32); 31] = [
+    const CODES: [(ClarionError, u32); 38] = [
         (ClarionError::InstructionDataMalformed, 100),
         (ClarionError::AccountCountMismatch, 101),
         (ClarionError::AuthoritySignatureMissing, 102),
@@ -173,6 +202,13 @@ mod tests {
         (ClarionError::RevealLagExceedsWindowLen, 129),
         (ClarionError::GenesisSlotPassed, 130),
         (ClarionError::GenesisSlotTooFar, 131),
+        (ClarionError::AuthorityUnchanged, 132),
+        (ClarionError::ProposalAddressMismatch, 133),
+        (ClarionError::ProposalOwnerMismatch, 134),
+        (ClarionError::ProposalDiscriminatorMismatch, 135),
+        (ClarionError::ProposalDataMalformed, 136),
+        (ClarionError::ProposalMissing, 137),
+        (ClarionError::ProposedAuthorityMismatch, 138),
     ];
 
     #[test]
@@ -199,7 +235,7 @@ mod tests {
         for (error, code) in CODES {
             assert_eq!(ClarionError::from_code(code), Some(error));
         }
-        for unassigned in [99, 122, 132] {
+        for unassigned in [99, 122, 139] {
             assert_eq!(ClarionError::from_code(unassigned), None);
         }
         let assigned = (0..=u32::from(u16::MAX))

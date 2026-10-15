@@ -16,9 +16,10 @@ use crate::{
     error::ClarionError,
     instruction::ClarionInstruction,
     state::{
-        ARM_COUNT, Arm, ArmAggregates, MAX_GENESIS_LEAD_SLOTS, STATE_DISCRIMINATOR,
+        ARM_COUNT, Arm, ArmAggregates, AuthorityProposal, MAX_GENESIS_LEAD_SLOTS,
+        PROPOSAL_DISCRIMINATOR, PROPOSAL_SEED, PROPOSAL_SIZE, STATE_DISCRIMINATOR,
         STATE_SEED, STATE_SIZE, State, WINDOW_DISCRIMINATOR, WINDOW_SEED, WINDOW_SIZE,
-        Window, state_address, window_address, window_bounds,
+        Window, proposal_address, state_address, window_address, window_bounds,
     },
 };
 
@@ -56,6 +57,13 @@ pub fn process_instruction(
             window_id,
             aggregates,
         } => reveal(program_id, accounts, window_id, aggregates),
+        ClarionInstruction::ProposeAuthority { new_authority } => {
+            propose_authority(program_id, accounts, new_authority)
+        }
+        ClarionInstruction::AcceptAuthority => accept_authority(program_id, accounts),
+        ClarionInstruction::CancelAuthorityProposal => {
+            cancel_authority_proposal(program_id, accounts)
+        }
     }
 }
 
@@ -273,6 +281,90 @@ fn reveal(
     Ok(())
 }
 
+fn propose_authority(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    new_authority: Pubkey,
+) -> ProgramResult {
+    let [
+        authority,
+        state_account,
+        proposal_account,
+        system_program_account,
+    ] = accounts
+    else {
+        return Err(ClarionError::AccountCountMismatch.into());
+    };
+    require_signer(authority)?;
+    require_system_program(system_program_account)?;
+    let state = load_state(program_id, state_account)?;
+    if state.authority != *authority.key {
+        return Err(ClarionError::AuthorityMismatch.into());
+    }
+    if new_authority == state.authority {
+        return Err(ClarionError::AuthorityUnchanged.into());
+    }
+    let (proposal_key, bump) = proposal_address(program_id);
+    if *proposal_account.key != proposal_key {
+        return Err(ClarionError::ProposalAddressMismatch.into());
+    }
+    let proposal = if is_absent(proposal_account)? {
+        create_program_account(
+            authority,
+            proposal_account,
+            system_program_account,
+            program_id,
+            PROPOSAL_SIZE,
+            &[PROPOSAL_SEED, &[bump]],
+        )?;
+        AuthorityProposal {
+            discriminator: PROPOSAL_DISCRIMINATOR,
+            proposed_authority: new_authority,
+            bump,
+        }
+    } else {
+        AuthorityProposal {
+            proposed_authority: new_authority,
+            ..load_proposal(program_id, proposal_account)?
+        }
+    };
+    proposal.pack(&mut proposal_account.try_borrow_mut_data()?)?;
+    Ok(())
+}
+
+fn accept_authority(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
+    let [new_authority, state_account, proposal_account] = accounts else {
+        return Err(ClarionError::AccountCountMismatch.into());
+    };
+    require_signer(new_authority)?;
+    let mut state = load_state(program_id, state_account)?;
+    let proposal = load_present_proposal(program_id, proposal_account)?;
+    if proposal.proposed_authority != *new_authority.key {
+        return Err(ClarionError::ProposedAuthorityMismatch.into());
+    }
+
+    state.authority = proposal.proposed_authority;
+    state.pack(&mut state_account.try_borrow_mut_data()?)?;
+    close_program_account(proposal_account, new_authority)
+}
+
+fn cancel_authority_proposal(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+) -> ProgramResult {
+    let [authority, state_account, proposal_account] = accounts else {
+        return Err(ClarionError::AccountCountMismatch.into());
+    };
+    require_signer(authority)?;
+    let state = load_state(program_id, state_account)?;
+    if state.authority != *authority.key {
+        return Err(ClarionError::AuthorityMismatch.into());
+    }
+    load_present_proposal(program_id, proposal_account)?;
+
+    close_program_account(proposal_account, authority)
+}
+
 fn require_signer(authority: &AccountInfo) -> Result<(), ClarionError> {
     if authority.is_signer {
         Ok(())
@@ -334,6 +426,47 @@ fn load_window(
         return Err(ClarionError::WindowAddressMismatch.into());
     }
     Ok(window)
+}
+
+fn load_proposal(
+    program_id: &Pubkey,
+    account: &AccountInfo,
+) -> Result<AuthorityProposal, ProgramError> {
+    if account.owner != program_id {
+        return Err(ClarionError::ProposalOwnerMismatch.into());
+    }
+    let proposal = AuthorityProposal::unpack(&account.try_borrow_data()?)?;
+    let derived =
+        Pubkey::create_program_address(&[PROPOSAL_SEED, &[proposal.bump]], program_id);
+    if derived.ok().as_ref() != Some(account.key) {
+        return Err(ClarionError::ProposalAddressMismatch.into());
+    }
+    Ok(proposal)
+}
+
+fn load_present_proposal(
+    program_id: &Pubkey,
+    account: &AccountInfo,
+) -> Result<AuthorityProposal, ProgramError> {
+    if *account.key != proposal_address(program_id).0 {
+        return Err(ClarionError::ProposalAddressMismatch.into());
+    }
+    if is_absent(account)? {
+        return Err(ClarionError::ProposalMissing.into());
+    }
+    load_proposal(program_id, account)
+}
+
+fn close_program_account(target: &AccountInfo, recipient: &AccountInfo) -> ProgramResult {
+    let mut target_lamports = target.try_borrow_mut_lamports()?;
+    let mut recipient_lamports = recipient.try_borrow_mut_lamports()?;
+    **recipient_lamports = recipient_lamports
+        .checked_add(**target_lamports)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    **target_lamports = 0;
+    target.resize(0)?;
+    target.assign(&system_program::ID);
+    Ok(())
 }
 
 fn create_program_account<'a>(

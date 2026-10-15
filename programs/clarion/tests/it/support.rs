@@ -1,8 +1,8 @@
 use std::sync::LazyLock;
 
 use clarion::{
-    ARM_COUNT, Arm, ArmAggregates, ClarionError, ClarionInstruction, State, Window,
-    state_address, window_address, window_bounds,
+    ARM_COUNT, Arm, ArmAggregates, AuthorityProposal, ClarionError, ClarionInstruction,
+    State, Window, proposal_address, state_address, window_address, window_bounds,
 };
 use solana_account::{Account, AccountSharedData};
 use solana_keypair::Keypair;
@@ -31,6 +31,7 @@ pub struct Harness {
     pub context: ProgramTestContext,
     pub authority: Keypair,
     pub intruder: Keypair,
+    pub successor: Keypair,
     pub program: Keypair,
 }
 
@@ -38,13 +39,14 @@ impl Harness {
     pub async fn start() -> Self {
         let authority = Keypair::new_from_array([1; 32]);
         let intruder = Keypair::new_from_array([2; 32]);
+        let successor = Keypair::new_from_array([3; 32]);
         let program = program_keypair();
         let mut program_test = ProgramTest::new(
             "clarion",
             *PROGRAM_ID,
             processor!(clarion::process_instruction),
         );
-        for signer in [&authority, &intruder] {
+        for signer in [&authority, &intruder, &successor] {
             program_test.add_account(signer.pubkey(), system_account(SIGNER_LAMPORTS));
         }
         let context = program_test.start_with_context().await;
@@ -52,6 +54,7 @@ impl Harness {
             context,
             authority,
             intruder,
+            successor,
             program,
         }
     }
@@ -100,11 +103,19 @@ impl Harness {
         instruction: Instruction,
         signers: &[&Keypair],
     ) -> Result<(), BanksClientError> {
+        self.send_all(&[instruction], signers).await
+    }
+
+    pub async fn send_all(
+        &mut self,
+        instructions: &[Instruction],
+        signers: &[&Keypair],
+    ) -> Result<(), BanksClientError> {
         let blockhash = self.context.get_new_latest_blockhash().await.unwrap();
         let mut signing = vec![&self.context.payer];
         signing.extend_from_slice(signers);
         let transaction = Transaction::new_signed_with_payer(
-            &[instruction],
+            instructions,
             Some(&self.context.payer.pubkey()),
             &signing,
             blockhash,
@@ -162,6 +173,27 @@ impl Harness {
         self.send_as_authority(instruction).await
     }
 
+    pub async fn propose(
+        &mut self,
+        new_authority: &Pubkey,
+    ) -> Result<(), BanksClientError> {
+        let instruction = propose_instruction(&self.authority.pubkey(), new_authority);
+        self.send_as_authority(instruction).await
+    }
+
+    pub async fn accept(
+        &mut self,
+        new_authority: &Keypair,
+    ) -> Result<(), BanksClientError> {
+        let instruction = accept_instruction(&new_authority.pubkey());
+        self.send(instruction, &[new_authority]).await
+    }
+
+    pub async fn cancel(&mut self) -> Result<(), BanksClientError> {
+        let instruction = cancel_instruction(&self.authority.pubkey());
+        self.send_as_authority(instruction).await
+    }
+
     pub async fn fund(&mut self, address: &Pubkey, lamports: u64) {
         let instruction =
             system_instruction::transfer(&self.context.payer.pubkey(), address, lamports);
@@ -189,6 +221,17 @@ impl Harness {
         let account = self.account(&window_key(window_id)).await.unwrap();
         Window::unpack(&account.data).unwrap()
     }
+
+    pub async fn proposal(&mut self) -> AuthorityProposal {
+        let account = self.account(&proposal_key()).await.unwrap();
+        AuthorityProposal::unpack(&account.data).unwrap()
+    }
+
+    pub async fn lamports(&mut self, address: &Pubkey) -> u64 {
+        self.account(address)
+            .await
+            .map_or(0, |account| account.lamports)
+    }
 }
 
 fn program_keypair() -> Keypair {
@@ -201,6 +244,10 @@ pub fn state_key() -> Pubkey {
 
 pub fn window_key(window_id: u64) -> Pubkey {
     window_address(&PROGRAM_ID, window_id).0
+}
+
+pub fn proposal_key() -> Pubkey {
+    proposal_address(&PROGRAM_ID).0
 }
 
 pub fn window_start(window_id: u64) -> u64 {
@@ -326,6 +373,42 @@ pub fn reveal_instruction(
             aggregates,
         },
         reveal_accounts(authority, window_id),
+    )
+}
+
+pub fn propose_instruction(authority: &Pubkey, new_authority: &Pubkey) -> Instruction {
+    instruction(
+        &ClarionInstruction::ProposeAuthority {
+            new_authority: *new_authority,
+        },
+        vec![
+            AccountMeta::new(*authority, true),
+            AccountMeta::new_readonly(state_key(), false),
+            AccountMeta::new(proposal_key(), false),
+            AccountMeta::new_readonly(system_program::ID, false),
+        ],
+    )
+}
+
+pub fn accept_instruction(new_authority: &Pubkey) -> Instruction {
+    instruction(
+        &ClarionInstruction::AcceptAuthority,
+        vec![
+            AccountMeta::new(*new_authority, true),
+            AccountMeta::new(state_key(), false),
+            AccountMeta::new(proposal_key(), false),
+        ],
+    )
+}
+
+pub fn cancel_instruction(authority: &Pubkey) -> Instruction {
+    instruction(
+        &ClarionInstruction::CancelAuthorityProposal,
+        vec![
+            AccountMeta::new(*authority, true),
+            AccountMeta::new_readonly(state_key(), false),
+            AccountMeta::new(proposal_key(), false),
+        ],
     )
 }
 
