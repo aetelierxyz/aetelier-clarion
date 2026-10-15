@@ -14,6 +14,7 @@ use solana_system_interface::{
 
 use crate::{
     error::ClarionError,
+    event::ClarionEvent,
     instruction::ClarionInstruction,
     state::{
         ARM_COUNT, Arm, ArmAggregates, AuthorityProposal, MAX_GENESIS_LEAD_SLOTS,
@@ -130,7 +131,13 @@ fn init(
         bump,
     };
     state.pack(&mut state_account.try_borrow_mut_data()?)?;
-    Ok(())
+    ClarionEvent::Initialized {
+        authority: state.authority,
+        genesis_slot,
+        window_len,
+        min_reveal_lag_slots,
+    }
+    .emit()
 }
 
 fn commit(
@@ -237,7 +244,14 @@ fn commit(
     };
     window.pack(&mut window_account.try_borrow_mut_data()?)?;
     state.pack(&mut state_account.try_borrow_mut_data()?)?;
-    Ok(())
+    ClarionEvent::Committed {
+        window_id,
+        slot_start,
+        slot_end,
+        merkle_root,
+        commit_slot,
+    }
+    .emit()
 }
 
 fn reveal(
@@ -278,7 +292,12 @@ fn reveal(
     window.aggregates = aggregates;
     window.reveal_slot = reveal_slot;
     window.pack(&mut window_account.try_borrow_mut_data()?)?;
-    Ok(())
+    ClarionEvent::Revealed {
+        window_id,
+        reveal_slot,
+        aggregates,
+    }
+    .emit()
 }
 
 fn propose_authority(
@@ -329,7 +348,11 @@ fn propose_authority(
         }
     };
     proposal.pack(&mut proposal_account.try_borrow_mut_data()?)?;
-    Ok(())
+    ClarionEvent::AuthorityProposed {
+        authority: state.authority,
+        proposed_authority: proposal.proposed_authority,
+    }
+    .emit()
 }
 
 fn accept_authority(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
@@ -343,9 +366,15 @@ fn accept_authority(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramRes
         return Err(ClarionError::ProposedAuthorityMismatch.into());
     }
 
+    let previous_authority = state.authority;
     state.authority = proposal.proposed_authority;
     state.pack(&mut state_account.try_borrow_mut_data()?)?;
-    close_program_account(proposal_account, new_authority)
+    close_program_account(proposal_account, new_authority)?;
+    ClarionEvent::AuthorityAccepted {
+        previous_authority,
+        authority: state.authority,
+    }
+    .emit()
 }
 
 fn cancel_authority_proposal(
@@ -360,9 +389,14 @@ fn cancel_authority_proposal(
     if state.authority != *authority.key {
         return Err(ClarionError::AuthorityMismatch.into());
     }
-    load_present_proposal(program_id, proposal_account)?;
+    let proposal = load_present_proposal(program_id, proposal_account)?;
 
-    close_program_account(proposal_account, authority)
+    close_program_account(proposal_account, authority)?;
+    ClarionEvent::AuthorityProposalCancelled {
+        authority: state.authority,
+        proposed_authority: proposal.proposed_authority,
+    }
+    .emit()
 }
 
 fn require_signer(authority: &AccountInfo) -> Result<(), ClarionError> {

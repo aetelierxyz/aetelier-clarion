@@ -1,9 +1,13 @@
 pub mod error;
+pub mod event;
+#[cfg(feature = "idl")]
+pub mod idl;
 pub mod instruction;
 pub mod processor;
 pub mod state;
 
 pub use error::ClarionError;
+pub use event::ClarionEvent;
 pub use instruction::ClarionInstruction;
 pub use processor::process_instruction;
 pub use state::{

@@ -1,0 +1,1589 @@
+{
+  "kind": "rootNode",
+  "standard": "codama",
+  "version": "1.8.0",
+  "program": {
+    "kind": "programNode",
+    "name": "clarion",
+    "publicKey": "4BoLZBXpFpBY8vgZrvh5ShYU5WgZT6qEVCdQyY7f35BC",
+    "version": "0.1.0",
+    "accounts": [
+      {
+        "kind": "accountNode",
+        "name": "state",
+        "data": {
+          "kind": "structTypeNode",
+          "fields": [
+            {
+              "kind": "structFieldTypeNode",
+              "name": "discriminator",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              },
+              "defaultValue": {
+                "kind": "numberValueNode",
+                "number": 1
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "authority",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "genesisSlot",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u64",
+                "endian": "le"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "windowLen",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u64",
+                "endian": "le"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "minRevealLagSlots",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u64",
+                "endian": "le"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "nextWindowId",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u64",
+                "endian": "le"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "bump",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              }
+            }
+          ]
+        },
+        "pda": {
+          "kind": "pdaLinkNode",
+          "name": "state"
+        },
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ]
+      },
+      {
+        "kind": "accountNode",
+        "name": "window",
+        "data": {
+          "kind": "structTypeNode",
+          "fields": [
+            {
+              "kind": "structFieldTypeNode",
+              "name": "discriminator",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              },
+              "defaultValue": {
+                "kind": "numberValueNode",
+                "number": 2
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "windowId",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u64",
+                "endian": "le"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "slotStart",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u64",
+                "endian": "le"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "slotEnd",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u64",
+                "endian": "le"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "merkleRoot",
+              "type": {
+                "kind": "arrayTypeNode",
+                "item": {
+                  "kind": "numberTypeNode",
+                  "format": "u8",
+                  "endian": "le"
+                },
+                "count": {
+                  "kind": "fixedCountNode",
+                  "value": 32
+                }
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "commitSlot",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u64",
+                "endian": "le"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "revealSlot",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u64",
+                "endian": "le"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "aggregates",
+              "type": {
+                "kind": "arrayTypeNode",
+                "item": {
+                  "kind": "definedTypeLinkNode",
+                  "name": "armAggregates"
+                },
+                "count": {
+                  "kind": "fixedCountNode",
+                  "value": 4
+                }
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "bump",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              }
+            }
+          ]
+        },
+        "pda": {
+          "kind": "pdaLinkNode",
+          "name": "window"
+        },
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ]
+      },
+      {
+        "kind": "accountNode",
+        "name": "authorityProposal",
+        "data": {
+          "kind": "structTypeNode",
+          "fields": [
+            {
+              "kind": "structFieldTypeNode",
+              "name": "discriminator",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              },
+              "defaultValue": {
+                "kind": "numberValueNode",
+                "number": 3
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "proposedAuthority",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "bump",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              }
+            }
+          ]
+        },
+        "pda": {
+          "kind": "pdaLinkNode",
+          "name": "authorityProposal"
+        },
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ]
+      }
+    ],
+    "instructions": [
+      {
+        "kind": "instructionNode",
+        "name": "init",
+        "accounts": [
+          {
+            "kind": "instructionAccountNode",
+            "name": "authority",
+            "isWritable": true,
+            "isSigner": true
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "state",
+            "isWritable": true,
+            "isSigner": false,
+            "defaultValue": {
+              "kind": "pdaValueNode",
+              "pda": {
+                "kind": "pdaLinkNode",
+                "name": "state"
+              }
+            }
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "systemProgram",
+            "isWritable": false,
+            "isSigner": false,
+            "defaultValue": {
+              "kind": "publicKeyValueNode",
+              "publicKey": "11111111111111111111111111111111"
+            }
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "program",
+            "isWritable": false,
+            "isSigner": true
+          }
+        ],
+        "arguments": [
+          {
+            "kind": "instructionArgumentNode",
+            "name": "discriminator",
+            "defaultValueStrategy": "omitted",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            },
+            "defaultValue": {
+              "kind": "numberValueNode",
+              "number": 0
+            },
+            "display": {
+              "kind": "structFieldDisplayNode",
+              "skip": "always"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "genesisSlot",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u64",
+              "endian": "le"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "windowLen",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u64",
+              "endian": "le"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "minRevealLagSlots",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u64",
+              "endian": "le"
+            }
+          }
+        ],
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ]
+      },
+      {
+        "kind": "instructionNode",
+        "name": "commit",
+        "optionalAccountStrategy": "omitted",
+        "accounts": [
+          {
+            "kind": "instructionAccountNode",
+            "name": "authority",
+            "isWritable": true,
+            "isSigner": true
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "state",
+            "isWritable": true,
+            "isSigner": false,
+            "defaultValue": {
+              "kind": "pdaValueNode",
+              "pda": {
+                "kind": "pdaLinkNode",
+                "name": "state"
+              }
+            }
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "window",
+            "isWritable": true,
+            "isSigner": false,
+            "defaultValue": {
+              "kind": "pdaValueNode",
+              "pda": {
+                "kind": "pdaLinkNode",
+                "name": "window"
+              },
+              "seeds": [
+                {
+                  "kind": "pdaSeedValueNode",
+                  "name": "windowId",
+                  "value": {
+                    "kind": "argumentValueNode",
+                    "name": "windowId"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "systemProgram",
+            "isWritable": false,
+            "isSigner": false,
+            "defaultValue": {
+              "kind": "publicKeyValueNode",
+              "publicKey": "11111111111111111111111111111111"
+            }
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "previousWindow",
+            "isWritable": false,
+            "isSigner": false,
+            "isOptional": true
+          }
+        ],
+        "arguments": [
+          {
+            "kind": "instructionArgumentNode",
+            "name": "discriminator",
+            "defaultValueStrategy": "omitted",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            },
+            "defaultValue": {
+              "kind": "numberValueNode",
+              "number": 1
+            },
+            "display": {
+              "kind": "structFieldDisplayNode",
+              "skip": "always"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "windowId",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u64",
+              "endian": "le"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "slotStart",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u64",
+              "endian": "le"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "slotEnd",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u64",
+              "endian": "le"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "merkleRoot",
+            "type": {
+              "kind": "arrayTypeNode",
+              "item": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              },
+              "count": {
+                "kind": "fixedCountNode",
+                "value": 32
+              }
+            }
+          }
+        ],
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ]
+      },
+      {
+        "kind": "instructionNode",
+        "name": "reveal",
+        "accounts": [
+          {
+            "kind": "instructionAccountNode",
+            "name": "authority",
+            "isWritable": false,
+            "isSigner": true
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "state",
+            "isWritable": false,
+            "isSigner": false,
+            "defaultValue": {
+              "kind": "pdaValueNode",
+              "pda": {
+                "kind": "pdaLinkNode",
+                "name": "state"
+              }
+            }
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "window",
+            "isWritable": true,
+            "isSigner": false,
+            "defaultValue": {
+              "kind": "pdaValueNode",
+              "pda": {
+                "kind": "pdaLinkNode",
+                "name": "window"
+              },
+              "seeds": [
+                {
+                  "kind": "pdaSeedValueNode",
+                  "name": "windowId",
+                  "value": {
+                    "kind": "argumentValueNode",
+                    "name": "windowId"
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "arguments": [
+          {
+            "kind": "instructionArgumentNode",
+            "name": "discriminator",
+            "defaultValueStrategy": "omitted",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            },
+            "defaultValue": {
+              "kind": "numberValueNode",
+              "number": 2
+            },
+            "display": {
+              "kind": "structFieldDisplayNode",
+              "skip": "always"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "windowId",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u64",
+              "endian": "le"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "aggregates",
+            "type": {
+              "kind": "arrayTypeNode",
+              "item": {
+                "kind": "definedTypeLinkNode",
+                "name": "armAggregates"
+              },
+              "count": {
+                "kind": "fixedCountNode",
+                "value": 4
+              }
+            }
+          }
+        ],
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ]
+      },
+      {
+        "kind": "instructionNode",
+        "name": "proposeAuthority",
+        "accounts": [
+          {
+            "kind": "instructionAccountNode",
+            "name": "authority",
+            "isWritable": true,
+            "isSigner": true
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "state",
+            "isWritable": false,
+            "isSigner": false,
+            "defaultValue": {
+              "kind": "pdaValueNode",
+              "pda": {
+                "kind": "pdaLinkNode",
+                "name": "state"
+              }
+            }
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "authorityProposal",
+            "isWritable": true,
+            "isSigner": false,
+            "defaultValue": {
+              "kind": "pdaValueNode",
+              "pda": {
+                "kind": "pdaLinkNode",
+                "name": "authorityProposal"
+              }
+            }
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "systemProgram",
+            "isWritable": false,
+            "isSigner": false,
+            "defaultValue": {
+              "kind": "publicKeyValueNode",
+              "publicKey": "11111111111111111111111111111111"
+            }
+          }
+        ],
+        "arguments": [
+          {
+            "kind": "instructionArgumentNode",
+            "name": "discriminator",
+            "defaultValueStrategy": "omitted",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            },
+            "defaultValue": {
+              "kind": "numberValueNode",
+              "number": 3
+            },
+            "display": {
+              "kind": "structFieldDisplayNode",
+              "skip": "always"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "newAuthority",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          }
+        ],
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ]
+      },
+      {
+        "kind": "instructionNode",
+        "name": "acceptAuthority",
+        "accounts": [
+          {
+            "kind": "instructionAccountNode",
+            "name": "newAuthority",
+            "isWritable": true,
+            "isSigner": true
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "state",
+            "isWritable": true,
+            "isSigner": false,
+            "defaultValue": {
+              "kind": "pdaValueNode",
+              "pda": {
+                "kind": "pdaLinkNode",
+                "name": "state"
+              }
+            }
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "authorityProposal",
+            "isWritable": true,
+            "isSigner": false,
+            "defaultValue": {
+              "kind": "pdaValueNode",
+              "pda": {
+                "kind": "pdaLinkNode",
+                "name": "authorityProposal"
+              }
+            }
+          }
+        ],
+        "arguments": [
+          {
+            "kind": "instructionArgumentNode",
+            "name": "discriminator",
+            "defaultValueStrategy": "omitted",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            },
+            "defaultValue": {
+              "kind": "numberValueNode",
+              "number": 4
+            },
+            "display": {
+              "kind": "structFieldDisplayNode",
+              "skip": "always"
+            }
+          }
+        ],
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ]
+      },
+      {
+        "kind": "instructionNode",
+        "name": "cancelAuthorityProposal",
+        "accounts": [
+          {
+            "kind": "instructionAccountNode",
+            "name": "authority",
+            "isWritable": true,
+            "isSigner": true
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "state",
+            "isWritable": false,
+            "isSigner": false,
+            "defaultValue": {
+              "kind": "pdaValueNode",
+              "pda": {
+                "kind": "pdaLinkNode",
+                "name": "state"
+              }
+            }
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "authorityProposal",
+            "isWritable": true,
+            "isSigner": false,
+            "defaultValue": {
+              "kind": "pdaValueNode",
+              "pda": {
+                "kind": "pdaLinkNode",
+                "name": "authorityProposal"
+              }
+            }
+          }
+        ],
+        "arguments": [
+          {
+            "kind": "instructionArgumentNode",
+            "name": "discriminator",
+            "defaultValueStrategy": "omitted",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            },
+            "defaultValue": {
+              "kind": "numberValueNode",
+              "number": 5
+            },
+            "display": {
+              "kind": "structFieldDisplayNode",
+              "skip": "always"
+            }
+          }
+        ],
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ]
+      }
+    ],
+    "definedTypes": [
+      {
+        "kind": "definedTypeNode",
+        "name": "arm",
+        "type": {
+          "kind": "enumTypeNode",
+          "variants": [
+            {
+              "kind": "enumEmptyVariantTypeNode",
+              "name": "fanOut"
+            },
+            {
+              "kind": "enumEmptyVariantTypeNode",
+              "name": "tipLane"
+            },
+            {
+              "kind": "enumEmptyVariantTypeNode",
+              "name": "rpcDefault"
+            },
+            {
+              "kind": "enumEmptyVariantTypeNode",
+              "name": "fixedPriorityFee"
+            }
+          ],
+          "size": {
+            "kind": "numberTypeNode",
+            "format": "u8",
+            "endian": "le"
+          }
+        }
+      },
+      {
+        "kind": "definedTypeNode",
+        "name": "armAggregates",
+        "type": {
+          "kind": "structTypeNode",
+          "fields": [
+            {
+              "kind": "structFieldTypeNode",
+              "name": "arm",
+              "type": {
+                "kind": "definedTypeLinkNode",
+                "name": "arm"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "txSubmitted",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u32",
+                "endian": "le"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "txLanded",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u32",
+                "endian": "le"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "stlP50Slots",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u16",
+                "endian": "le"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "stlP90Slots",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u16",
+                "endian": "le"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "cuPriceP50Micro",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u64",
+                "endian": "le"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "cuPriceP90Micro",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u64",
+                "endian": "le"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "feeTotalLamports",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u64",
+                "endian": "le"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "tipTotalLamports",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u64",
+                "endian": "le"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "pdas": [
+      {
+        "kind": "pdaNode",
+        "name": "state",
+        "seeds": [
+          {
+            "kind": "constantPdaSeedNode",
+            "type": {
+              "kind": "stringTypeNode",
+              "encoding": "utf8"
+            },
+            "value": {
+              "kind": "stringValueNode",
+              "string": "clarion"
+            }
+          }
+        ]
+      },
+      {
+        "kind": "pdaNode",
+        "name": "window",
+        "seeds": [
+          {
+            "kind": "constantPdaSeedNode",
+            "type": {
+              "kind": "stringTypeNode",
+              "encoding": "utf8"
+            },
+            "value": {
+              "kind": "stringValueNode",
+              "string": "window"
+            }
+          },
+          {
+            "kind": "variablePdaSeedNode",
+            "name": "windowId",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u64",
+              "endian": "le"
+            }
+          }
+        ]
+      },
+      {
+        "kind": "pdaNode",
+        "name": "authorityProposal",
+        "seeds": [
+          {
+            "kind": "constantPdaSeedNode",
+            "type": {
+              "kind": "stringTypeNode",
+              "encoding": "utf8"
+            },
+            "value": {
+              "kind": "stringValueNode",
+              "string": "authority_proposal"
+            }
+          }
+        ]
+      }
+    ],
+    "events": [
+      {
+        "kind": "eventNode",
+        "name": "initialized",
+        "data": {
+          "kind": "structTypeNode",
+          "fields": [
+            {
+              "kind": "structFieldTypeNode",
+              "name": "discriminator",
+              "defaultValueStrategy": "omitted",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              },
+              "defaultValue": {
+                "kind": "numberValueNode",
+                "number": 0
+              },
+              "display": {
+                "kind": "structFieldDisplayNode",
+                "skip": "always"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "authority",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "genesisSlot",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u64",
+                "endian": "le"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "windowLen",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u64",
+                "endian": "le"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "minRevealLagSlots",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u64",
+                "endian": "le"
+              }
+            }
+          ]
+        },
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ]
+      },
+      {
+        "kind": "eventNode",
+        "name": "committed",
+        "data": {
+          "kind": "structTypeNode",
+          "fields": [
+            {
+              "kind": "structFieldTypeNode",
+              "name": "discriminator",
+              "defaultValueStrategy": "omitted",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              },
+              "defaultValue": {
+                "kind": "numberValueNode",
+                "number": 1
+              },
+              "display": {
+                "kind": "structFieldDisplayNode",
+                "skip": "always"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "windowId",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u64",
+                "endian": "le"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "slotStart",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u64",
+                "endian": "le"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "slotEnd",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u64",
+                "endian": "le"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "merkleRoot",
+              "type": {
+                "kind": "arrayTypeNode",
+                "item": {
+                  "kind": "numberTypeNode",
+                  "format": "u8",
+                  "endian": "le"
+                },
+                "count": {
+                  "kind": "fixedCountNode",
+                  "value": 32
+                }
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "commitSlot",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u64",
+                "endian": "le"
+              }
+            }
+          ]
+        },
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ]
+      },
+      {
+        "kind": "eventNode",
+        "name": "revealed",
+        "data": {
+          "kind": "structTypeNode",
+          "fields": [
+            {
+              "kind": "structFieldTypeNode",
+              "name": "discriminator",
+              "defaultValueStrategy": "omitted",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              },
+              "defaultValue": {
+                "kind": "numberValueNode",
+                "number": 2
+              },
+              "display": {
+                "kind": "structFieldDisplayNode",
+                "skip": "always"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "windowId",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u64",
+                "endian": "le"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "revealSlot",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u64",
+                "endian": "le"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "aggregates",
+              "type": {
+                "kind": "arrayTypeNode",
+                "item": {
+                  "kind": "definedTypeLinkNode",
+                  "name": "armAggregates"
+                },
+                "count": {
+                  "kind": "fixedCountNode",
+                  "value": 4
+                }
+              }
+            }
+          ]
+        },
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ]
+      },
+      {
+        "kind": "eventNode",
+        "name": "authorityProposed",
+        "data": {
+          "kind": "structTypeNode",
+          "fields": [
+            {
+              "kind": "structFieldTypeNode",
+              "name": "discriminator",
+              "defaultValueStrategy": "omitted",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              },
+              "defaultValue": {
+                "kind": "numberValueNode",
+                "number": 3
+              },
+              "display": {
+                "kind": "structFieldDisplayNode",
+                "skip": "always"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "authority",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "proposedAuthority",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            }
+          ]
+        },
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ]
+      },
+      {
+        "kind": "eventNode",
+        "name": "authorityAccepted",
+        "data": {
+          "kind": "structTypeNode",
+          "fields": [
+            {
+              "kind": "structFieldTypeNode",
+              "name": "discriminator",
+              "defaultValueStrategy": "omitted",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              },
+              "defaultValue": {
+                "kind": "numberValueNode",
+                "number": 4
+              },
+              "display": {
+                "kind": "structFieldDisplayNode",
+                "skip": "always"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "previousAuthority",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "authority",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            }
+          ]
+        },
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ]
+      },
+      {
+        "kind": "eventNode",
+        "name": "authorityProposalCancelled",
+        "data": {
+          "kind": "structTypeNode",
+          "fields": [
+            {
+              "kind": "structFieldTypeNode",
+              "name": "discriminator",
+              "defaultValueStrategy": "omitted",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              },
+              "defaultValue": {
+                "kind": "numberValueNode",
+                "number": 5
+              },
+              "display": {
+                "kind": "structFieldDisplayNode",
+                "skip": "always"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "authority",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "proposedAuthority",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            }
+          ]
+        },
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ]
+      }
+    ],
+    "errors": [
+      {
+        "kind": "errorNode",
+        "name": "instructionDataMalformed",
+        "code": 100,
+        "message": "instruction data does not decode"
+      },
+      {
+        "kind": "errorNode",
+        "name": "accountCountMismatch",
+        "code": 101,
+        "message": "account list length does not match the instruction"
+      },
+      {
+        "kind": "errorNode",
+        "name": "authoritySignatureMissing",
+        "code": 102,
+        "message": "authority did not sign"
+      },
+      {
+        "kind": "errorNode",
+        "name": "systemProgramMismatch",
+        "code": 103,
+        "message": "system program account has another id"
+      },
+      {
+        "kind": "errorNode",
+        "name": "stateAddressMismatch",
+        "code": 104,
+        "message": "state account is not the derived address"
+      },
+      {
+        "kind": "errorNode",
+        "name": "stateAlreadyInitialized",
+        "code": 105,
+        "message": "state account already exists"
+      },
+      {
+        "kind": "errorNode",
+        "name": "stateOwnerMismatch",
+        "code": 106,
+        "message": "state account is not owned by the program"
+      },
+      {
+        "kind": "errorNode",
+        "name": "stateDiscriminatorMismatch",
+        "code": 107,
+        "message": "state account has another discriminator"
+      },
+      {
+        "kind": "errorNode",
+        "name": "stateDataMalformed",
+        "code": 108,
+        "message": "state account data does not decode"
+      },
+      {
+        "kind": "errorNode",
+        "name": "windowAddressMismatch",
+        "code": 109,
+        "message": "window account is not the derived address"
+      },
+      {
+        "kind": "errorNode",
+        "name": "windowAlreadyCommitted",
+        "code": 110,
+        "message": "window account already exists"
+      },
+      {
+        "kind": "errorNode",
+        "name": "windowOwnerMismatch",
+        "code": 111,
+        "message": "window account is not owned by the program"
+      },
+      {
+        "kind": "errorNode",
+        "name": "windowDiscriminatorMismatch",
+        "code": 112,
+        "message": "window account has another discriminator"
+      },
+      {
+        "kind": "errorNode",
+        "name": "windowDataMalformed",
+        "code": 113,
+        "message": "window account data does not decode"
+      },
+      {
+        "kind": "errorNode",
+        "name": "windowLenZero",
+        "code": 114,
+        "message": "window_len is zero"
+      },
+      {
+        "kind": "errorNode",
+        "name": "minRevealLagZero",
+        "code": 115,
+        "message": "min_reveal_lag_slots is zero"
+      },
+      {
+        "kind": "errorNode",
+        "name": "authorityMismatch",
+        "code": 116,
+        "message": "signer is not the stored authority"
+      },
+      {
+        "kind": "errorNode",
+        "name": "windowIdNotSequential",
+        "code": 117,
+        "message": "window_id is not next_window_id"
+      },
+      {
+        "kind": "errorNode",
+        "name": "windowBoundsOverflow",
+        "code": 118,
+        "message": "window bounds overflow u64"
+      },
+      {
+        "kind": "errorNode",
+        "name": "slotStartOffGrid",
+        "code": 119,
+        "message": "slot_start is off the window grid"
+      },
+      {
+        "kind": "errorNode",
+        "name": "slotEndOffGrid",
+        "code": 120,
+        "message": "slot_end is off the window grid"
+      },
+      {
+        "kind": "errorNode",
+        "name": "windowNotClosed",
+        "code": 121,
+        "message": "slot_end has not passed"
+      },
+      {
+        "kind": "errorNode",
+        "name": "windowAlreadyRevealed",
+        "code": 123,
+        "message": "window is already revealed"
+      },
+      {
+        "kind": "errorNode",
+        "name": "revealLagNotElapsed",
+        "code": 124,
+        "message": "min_reveal_lag_slots has not elapsed since commit"
+      },
+      {
+        "kind": "errorNode",
+        "name": "landedExceedsSubmitted",
+        "code": 125,
+        "message": "tx_landed exceeds tx_submitted"
+      },
+      {
+        "kind": "errorNode",
+        "name": "programSignatureMissing",
+        "code": 126,
+        "message": "program id did not sign"
+      },
+      {
+        "kind": "errorNode",
+        "name": "previousWindowNotRevealed",
+        "code": 127,
+        "message": "previous window is not revealed"
+      },
+      {
+        "kind": "errorNode",
+        "name": "armOutOfOrder",
+        "code": 128,
+        "message": "aggregates are not in arm order"
+      },
+      {
+        "kind": "errorNode",
+        "name": "revealLagExceedsWindowLen",
+        "code": 129,
+        "message": "min_reveal_lag_slots exceeds window_len"
+      },
+      {
+        "kind": "errorNode",
+        "name": "genesisSlotPassed",
+        "code": 130,
+        "message": "genesis_slot is before the current slot"
+      },
+      {
+        "kind": "errorNode",
+        "name": "genesisSlotTooFar",
+        "code": 131,
+        "message": "genesis_slot is more than MAX_GENESIS_LEAD_SLOTS ahead of the current slot"
+      },
+      {
+        "kind": "errorNode",
+        "name": "authorityUnchanged",
+        "code": 132,
+        "message": "new authority is the stored authority"
+      },
+      {
+        "kind": "errorNode",
+        "name": "proposalAddressMismatch",
+        "code": 133,
+        "message": "authority proposal account is not the derived address"
+      },
+      {
+        "kind": "errorNode",
+        "name": "proposalOwnerMismatch",
+        "code": 134,
+        "message": "authority proposal account is not owned by the program"
+      },
+      {
+        "kind": "errorNode",
+        "name": "proposalDiscriminatorMismatch",
+        "code": 135,
+        "message": "authority proposal account has another discriminator"
+      },
+      {
+        "kind": "errorNode",
+        "name": "proposalDataMalformed",
+        "code": 136,
+        "message": "authority proposal account data does not decode"
+      },
+      {
+        "kind": "errorNode",
+        "name": "proposalMissing",
+        "code": 137,
+        "message": "authority proposal account does not exist"
+      },
+      {
+        "kind": "errorNode",
+        "name": "proposedAuthorityMismatch",
+        "code": 138,
+        "message": "signer is not the proposed authority"
+      }
+    ]
+  }
+}
