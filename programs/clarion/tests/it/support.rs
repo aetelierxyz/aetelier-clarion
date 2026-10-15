@@ -1,14 +1,21 @@
-use std::sync::LazyLock;
+use std::sync::{LazyLock, Once};
 
+use base64::{Engine, prelude::BASE64_STANDARD};
+use borsh::BorshDeserialize;
 use clarion::{
-    ARM_COUNT, Arm, ArmAggregates, ClarionError, ClarionInstruction, State, Window,
-    state_address, window_address, window_bounds,
+    ARM_COUNT, Arm, ArmAggregates, AuthorityProposal, ClarionError, ClarionEvent,
+    ClarionInstruction, State, Window, proposal_address, state_address, window_address,
+    window_bounds,
 };
 use solana_account::{Account, AccountSharedData};
 use solana_keypair::Keypair;
 use solana_program::{
+    account_info::AccountInfo,
+    bpf_loader,
     clock::Clock,
+    entrypoint::ProgramResult,
     instruction::{AccountMeta, Instruction, InstructionError},
+    program_stubs::{self, SyscallStubs},
     pubkey::Pubkey,
     rent::Rent,
 };
@@ -26,11 +33,19 @@ pub const WINDOW_LEN: u64 = 10;
 pub const MIN_REVEAL_LAG_SLOTS: u64 = 5;
 pub const MERKLE_ROOT: [u8; 32] = [7; 32];
 pub const SIGNER_LAMPORTS: u64 = 10_000_000_000;
+pub const DATA_LOG_PREFIX: &str = "Program data: ";
+pub const NATIVE_DATA_LOG_PREFIX: &str = "Program log: Program data: ";
+
+pub struct Sent {
+    pub result: Result<(), TransactionError>,
+    pub logs: Vec<String>,
+}
 
 pub struct Harness {
     pub context: ProgramTestContext,
     pub authority: Keypair,
     pub intruder: Keypair,
+    pub successor: Keypair,
     pub program: Keypair,
 }
 
@@ -38,20 +53,23 @@ impl Harness {
     pub async fn start() -> Self {
         let authority = Keypair::new_from_array([1; 32]);
         let intruder = Keypair::new_from_array([2; 32]);
+        let successor = Keypair::new_from_array([3; 32]);
         let program = program_keypair();
         let mut program_test = ProgramTest::new(
             "clarion",
             *PROGRAM_ID,
             processor!(clarion::process_instruction),
         );
-        for signer in [&authority, &intruder] {
+        for signer in [&authority, &intruder, &successor] {
             program_test.add_account(signer.pubkey(), system_account(SIGNER_LAMPORTS));
         }
         let context = program_test.start_with_context().await;
+        route_native_log_data_into_transaction_logs();
         Self {
             context,
             authority,
             intruder,
+            successor,
             program,
         }
     }
@@ -100,11 +118,19 @@ impl Harness {
         instruction: Instruction,
         signers: &[&Keypair],
     ) -> Result<(), BanksClientError> {
+        self.send_all(&[instruction], signers).await
+    }
+
+    pub async fn send_all(
+        &mut self,
+        instructions: &[Instruction],
+        signers: &[&Keypair],
+    ) -> Result<(), BanksClientError> {
         let blockhash = self.context.get_new_latest_blockhash().await.unwrap();
         let mut signing = vec![&self.context.payer];
         signing.extend_from_slice(signers);
         let transaction = Transaction::new_signed_with_payer(
-            &[instruction],
+            instructions,
             Some(&self.context.payer.pubkey()),
             &signing,
             blockhash,
@@ -119,17 +145,83 @@ impl Harness {
         &mut self,
         instruction: Instruction,
     ) -> Result<(), BanksClientError> {
-        let authority = self.authority.insecure_clone();
-        let program = self.program.insecure_clone();
-        let mut signers = vec![&authority];
+        let signers = self.authority_signers(&instruction);
+        let signers: Vec<&Keypair> = signers.iter().collect();
+        self.send(instruction, &signers).await
+    }
+
+    pub async fn send_logged(
+        &mut self,
+        instructions: &[Instruction],
+        signers: &[&Keypair],
+    ) -> Sent {
+        let blockhash = self.context.get_new_latest_blockhash().await.unwrap();
+        let mut signing = vec![&self.context.payer];
+        signing.extend_from_slice(signers);
+        let transaction = Transaction::new_signed_with_payer(
+            instructions,
+            Some(&self.context.payer.pubkey()),
+            &signing,
+            blockhash,
+        );
+        let outcome = self
+            .context
+            .banks_client
+            .process_transaction_with_metadata(transaction)
+            .await
+            .unwrap();
+        Sent {
+            result: outcome.result,
+            logs: outcome.metadata.unwrap().log_messages,
+        }
+    }
+
+    pub async fn send_logged_as_authority(&mut self, instruction: Instruction) -> Sent {
+        let signers = self.authority_signers(&instruction);
+        let signers: Vec<&Keypair> = signers.iter().collect();
+        self.send_logged(&[instruction], &signers).await
+    }
+
+    fn authority_signers(&self, instruction: &Instruction) -> Vec<Keypair> {
+        let mut signers = vec![self.authority.insecure_clone()];
         if instruction
             .accounts
             .iter()
             .any(|account| account.is_signer && account.pubkey == *PROGRAM_ID)
         {
-            signers.push(&program);
+            signers.push(self.program.insecure_clone());
         }
-        self.send(instruction, &signers).await
+        signers
+    }
+
+    pub async fn runs_sbf(&mut self) -> bool {
+        self.account(&PROGRAM_ID).await.unwrap().owner == bpf_loader::id()
+    }
+
+    pub async fn events(&mut self, logs: &[String]) -> Vec<ClarionEvent> {
+        let prefix = if self.runs_sbf().await {
+            DATA_LOG_PREFIX
+        } else {
+            NATIVE_DATA_LOG_PREFIX
+        };
+        let program = PROGRAM_ID.to_string();
+        let consumed = format!("Program {program} consumed ");
+        let success = format!("Program {program} success");
+        logs.iter()
+            .enumerate()
+            .filter(|(_, line)| line.contains(DATA_LOG_PREFIX))
+            .map(|(index, line)| {
+                let closing = logs[index + 1..]
+                    .iter()
+                    .find(|next| !next.starts_with(&consumed));
+                assert_eq!(closing, Some(&success), "{line} is not the last frame line");
+                let payload = line
+                    .strip_prefix(prefix)
+                    .unwrap_or_else(|| panic!("{line} does not start with {prefix}"));
+                let bytes = BASE64_STANDARD.decode(payload).unwrap();
+                ClarionEvent::try_from_slice(&bytes).unwrap()
+            })
+            .collect()
     }
 
     pub async fn init(
@@ -162,6 +254,27 @@ impl Harness {
         self.send_as_authority(instruction).await
     }
 
+    pub async fn propose(
+        &mut self,
+        new_authority: &Pubkey,
+    ) -> Result<(), BanksClientError> {
+        let instruction = propose_instruction(&self.authority.pubkey(), new_authority);
+        self.send_as_authority(instruction).await
+    }
+
+    pub async fn accept(
+        &mut self,
+        new_authority: &Keypair,
+    ) -> Result<(), BanksClientError> {
+        let instruction = accept_instruction(&new_authority.pubkey());
+        self.send(instruction, &[new_authority]).await
+    }
+
+    pub async fn cancel(&mut self) -> Result<(), BanksClientError> {
+        let instruction = cancel_instruction(&self.authority.pubkey());
+        self.send_as_authority(instruction).await
+    }
+
     pub async fn fund(&mut self, address: &Pubkey, lamports: u64) {
         let instruction =
             system_instruction::transfer(&self.context.payer.pubkey(), address, lamports);
@@ -189,6 +302,143 @@ impl Harness {
         let account = self.account(&window_key(window_id)).await.unwrap();
         Window::unpack(&account.data).unwrap()
     }
+
+    pub async fn proposal(&mut self) -> AuthorityProposal {
+        let account = self.account(&proposal_key()).await.unwrap();
+        AuthorityProposal::unpack(&account.data).unwrap()
+    }
+
+    pub async fn lamports(&mut self, address: &Pubkey) -> u64 {
+        self.account(address)
+            .await
+            .map_or(0, |account| account.lamports)
+    }
+}
+
+fn route_native_log_data_into_transaction_logs() {
+    static ROUTED: Once = Once::new();
+    ROUTED.call_once(|| {
+        let inner = program_stubs::set_syscall_stubs(Box::new(PlaceholderStubs));
+        program_stubs::set_syscall_stubs(Box::new(DataLoggingStubs { inner }));
+    });
+}
+
+struct PlaceholderStubs;
+
+impl SyscallStubs for PlaceholderStubs {}
+
+struct DataLoggingStubs {
+    inner: Box<dyn SyscallStubs>,
+}
+
+impl SyscallStubs for DataLoggingStubs {
+    fn sol_log(&self, message: &str) {
+        self.inner.sol_log(message);
+    }
+
+    fn sol_log_compute_units(&self) {
+        self.inner.sol_log_compute_units();
+    }
+
+    fn sol_remaining_compute_units(&self) -> u64 {
+        self.inner.sol_remaining_compute_units()
+    }
+
+    fn sol_invoke_signed(
+        &self,
+        instruction: &Instruction,
+        account_infos: &[AccountInfo],
+        signers_seeds: &[&[&[u8]]],
+    ) -> ProgramResult {
+        self.inner
+            .sol_invoke_signed(instruction, account_infos, signers_seeds)
+    }
+
+    fn sol_get_sysvar(
+        &self,
+        sysvar_id_addr: *const u8,
+        var_addr: *mut u8,
+        offset: u64,
+        length: u64,
+    ) -> u64 {
+        self.inner
+            .sol_get_sysvar(sysvar_id_addr, var_addr, offset, length)
+    }
+
+    fn sol_get_clock_sysvar(&self, var_addr: *mut u8) -> u64 {
+        self.inner.sol_get_clock_sysvar(var_addr)
+    }
+
+    fn sol_get_epoch_schedule_sysvar(&self, var_addr: *mut u8) -> u64 {
+        self.inner.sol_get_epoch_schedule_sysvar(var_addr)
+    }
+
+    fn sol_get_fees_sysvar(&self, var_addr: *mut u8) -> u64 {
+        self.inner.sol_get_fees_sysvar(var_addr)
+    }
+
+    fn sol_get_rent_sysvar(&self, var_addr: *mut u8) -> u64 {
+        self.inner.sol_get_rent_sysvar(var_addr)
+    }
+
+    fn sol_get_epoch_rewards_sysvar(&self, var_addr: *mut u8) -> u64 {
+        self.inner.sol_get_epoch_rewards_sysvar(var_addr)
+    }
+
+    fn sol_get_last_restart_slot(&self, var_addr: *mut u8) -> u64 {
+        self.inner.sol_get_last_restart_slot(var_addr)
+    }
+
+    fn sol_get_epoch_stake(&self, vote_address: *const u8) -> u64 {
+        self.inner.sol_get_epoch_stake(vote_address)
+    }
+
+    unsafe fn sol_memcpy(&self, dst: *mut u8, src: *const u8, n: usize) {
+        unsafe { self.inner.sol_memcpy(dst, src, n) }
+    }
+
+    unsafe fn sol_memmove(&self, dst: *mut u8, src: *const u8, n: usize) {
+        unsafe { self.inner.sol_memmove(dst, src, n) }
+    }
+
+    unsafe fn sol_memcmp(
+        &self,
+        s1: *const u8,
+        s2: *const u8,
+        n: usize,
+        result: *mut i32,
+    ) {
+        unsafe { self.inner.sol_memcmp(s1, s2, n, result) }
+    }
+
+    unsafe fn sol_memset(&self, s: *mut u8, c: u8, n: usize) {
+        unsafe { self.inner.sol_memset(s, c, n) }
+    }
+
+    fn sol_get_return_data(&self) -> Option<(Pubkey, Vec<u8>)> {
+        self.inner.sol_get_return_data()
+    }
+
+    fn sol_set_return_data(&self, data: &[u8]) {
+        self.inner.sol_set_return_data(data);
+    }
+
+    fn sol_log_data(&self, fields: &[&[u8]]) {
+        let encoded: Vec<String> = fields
+            .iter()
+            .map(|field| BASE64_STANDARD.encode(field))
+            .collect();
+        self.inner
+            .sol_log(&format!("{DATA_LOG_PREFIX}{}", encoded.join(" ")));
+    }
+
+    fn sol_get_processed_sibling_instruction(&self, index: usize) -> Option<Instruction> {
+        self.inner.sol_get_processed_sibling_instruction(index)
+    }
+
+    fn sol_get_stack_height(&self) -> u64 {
+        self.inner.sol_get_stack_height()
+    }
 }
 
 fn program_keypair() -> Keypair {
@@ -201,6 +451,10 @@ pub fn state_key() -> Pubkey {
 
 pub fn window_key(window_id: u64) -> Pubkey {
     window_address(&PROGRAM_ID, window_id).0
+}
+
+pub fn proposal_key() -> Pubkey {
+    proposal_address(&PROGRAM_ID).0
 }
 
 pub fn window_start(window_id: u64) -> u64 {
@@ -326,6 +580,42 @@ pub fn reveal_instruction(
             aggregates,
         },
         reveal_accounts(authority, window_id),
+    )
+}
+
+pub fn propose_instruction(authority: &Pubkey, new_authority: &Pubkey) -> Instruction {
+    instruction(
+        &ClarionInstruction::ProposeAuthority {
+            new_authority: *new_authority,
+        },
+        vec![
+            AccountMeta::new(*authority, true),
+            AccountMeta::new_readonly(state_key(), false),
+            AccountMeta::new(proposal_key(), false),
+            AccountMeta::new_readonly(system_program::ID, false),
+        ],
+    )
+}
+
+pub fn accept_instruction(new_authority: &Pubkey) -> Instruction {
+    instruction(
+        &ClarionInstruction::AcceptAuthority,
+        vec![
+            AccountMeta::new(*new_authority, true),
+            AccountMeta::new(state_key(), false),
+            AccountMeta::new(proposal_key(), false),
+        ],
+    )
+}
+
+pub fn cancel_instruction(authority: &Pubkey) -> Instruction {
+    instruction(
+        &ClarionInstruction::CancelAuthorityProposal,
+        vec![
+            AccountMeta::new(*authority, true),
+            AccountMeta::new_readonly(state_key(), false),
+            AccountMeta::new(proposal_key(), false),
+        ],
     )
 }
 

@@ -1,4 +1,5 @@
 use borsh::{BorshDeserialize, BorshSerialize};
+use solana_program::pubkey::Pubkey;
 
 use crate::{
     error::ClarionError,
@@ -6,22 +7,145 @@ use crate::{
 };
 
 #[derive(BorshSerialize, BorshDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "idl", derive(codama::CodamaInstructions))]
 pub enum ClarionInstruction {
+    #[cfg_attr(feature = "idl", codama(account(name = "authority", signer, writable)))]
+    #[cfg_attr(
+        feature = "idl",
+        codama(account(
+            name = "state",
+            writable,
+            default_value = pda("state", [])
+        ))
+    )]
+    #[cfg_attr(
+        feature = "idl",
+        codama(account(
+            name = "system_program",
+            default_value = program("system")
+        ))
+    )]
+    #[cfg_attr(feature = "idl", codama(account(name = "program", signer)))]
     Init {
         genesis_slot: u64,
         window_len: u64,
         min_reveal_lag_slots: u64,
     },
+    #[cfg_attr(feature = "idl", codama(account(name = "authority", signer, writable)))]
+    #[cfg_attr(
+        feature = "idl",
+        codama(account(
+            name = "state",
+            writable,
+            default_value = pda("state", [])
+        ))
+    )]
+    #[cfg_attr(
+        feature = "idl",
+        codama(account(
+            name = "window",
+            writable,
+            default_value = pda("window", [seed("windowId", argument("window_id"))])
+        ))
+    )]
+    #[cfg_attr(
+        feature = "idl",
+        codama(account(
+            name = "system_program",
+            default_value = program("system")
+        ))
+    )]
+    #[cfg_attr(feature = "idl", codama(account(name = "previous_window", optional)))]
+    #[cfg_attr(feature = "idl", codama(optional_account_strategy = omitted))]
     Commit {
         window_id: u64,
         slot_start: u64,
         slot_end: u64,
         merkle_root: [u8; 32],
     },
+    #[cfg_attr(feature = "idl", codama(account(name = "authority", signer)))]
+    #[cfg_attr(
+        feature = "idl",
+        codama(account(
+            name = "state",
+            default_value = pda("state", [])
+        ))
+    )]
+    #[cfg_attr(
+        feature = "idl",
+        codama(account(
+            name = "window",
+            writable,
+            default_value = pda("window", [seed("windowId", argument("window_id"))])
+        ))
+    )]
     Reveal {
         window_id: u64,
+        #[cfg_attr(feature = "idl", codama(type = array(link("armAggregates"), 4)))]
         aggregates: [ArmAggregates; ARM_COUNT],
     },
+    #[cfg_attr(feature = "idl", codama(account(name = "authority", signer, writable)))]
+    #[cfg_attr(
+        feature = "idl",
+        codama(account(
+            name = "state",
+            default_value = pda("state", [])
+        ))
+    )]
+    #[cfg_attr(
+        feature = "idl",
+        codama(account(
+            name = "authority_proposal",
+            writable,
+            default_value = pda("authorityProposal", [])
+        ))
+    )]
+    #[cfg_attr(
+        feature = "idl",
+        codama(account(
+            name = "system_program",
+            default_value = program("system")
+        ))
+    )]
+    ProposeAuthority { new_authority: Pubkey },
+    #[cfg_attr(
+        feature = "idl",
+        codama(account(name = "new_authority", signer, writable))
+    )]
+    #[cfg_attr(
+        feature = "idl",
+        codama(account(
+            name = "state",
+            writable,
+            default_value = pda("state", [])
+        ))
+    )]
+    #[cfg_attr(
+        feature = "idl",
+        codama(account(
+            name = "authority_proposal",
+            writable,
+            default_value = pda("authorityProposal", [])
+        ))
+    )]
+    AcceptAuthority,
+    #[cfg_attr(feature = "idl", codama(account(name = "authority", signer, writable)))]
+    #[cfg_attr(
+        feature = "idl",
+        codama(account(
+            name = "state",
+            default_value = pda("state", [])
+        ))
+    )]
+    #[cfg_attr(
+        feature = "idl",
+        codama(account(
+            name = "authority_proposal",
+            writable,
+            default_value = pda("authorityProposal", [])
+        ))
+    )]
+    CancelAuthorityProposal,
 }
 
 impl ClarionInstruction {
@@ -70,6 +194,37 @@ mod tests {
         }
     }
 
+    fn propose_authority() -> ClarionInstruction {
+        ClarionInstruction::ProposeAuthority {
+            new_authority: Pubkey::new_from_array([6; 32]),
+        }
+    }
+
+    fn every_variant() -> [ClarionInstruction; 6] {
+        [
+            init(),
+            commit(),
+            reveal(),
+            propose_authority(),
+            ClarionInstruction::AcceptAuthority,
+            ClarionInstruction::CancelAuthorityProposal,
+        ]
+    }
+
+    #[test]
+    fn authority_variants_follow_reveal_with_tags_three_to_five() {
+        let propose_bytes = borsh::to_vec(&propose_authority()).unwrap();
+        let accept_bytes = borsh::to_vec(&ClarionInstruction::AcceptAuthority).unwrap();
+        let cancel_bytes =
+            borsh::to_vec(&ClarionInstruction::CancelAuthorityProposal).unwrap();
+
+        assert_eq!(propose_bytes[0], 3);
+        assert_eq!(propose_bytes.len(), 1 + 32);
+        assert_eq!(propose_bytes[1..33], [6; 32]);
+        assert_eq!(accept_bytes, [4]);
+        assert_eq!(cancel_bytes, [5]);
+    }
+
     #[test]
     fn variants_encode_with_a_one_byte_tag_in_declaration_order() {
         let init_bytes = borsh::to_vec(&init()).unwrap();
@@ -102,7 +257,7 @@ mod tests {
 
     #[test]
     fn unpack_round_trips_every_variant() {
-        for instruction in [init(), commit(), reveal()] {
+        for instruction in every_variant() {
             let bytes = borsh::to_vec(&instruction).unwrap();
 
             assert_eq!(ClarionInstruction::unpack(&bytes), Ok(instruction));
@@ -119,7 +274,7 @@ mod tests {
 
     #[test]
     fn unpack_rejects_an_unknown_variant() {
-        for tag in 3..=u8::MAX {
+        for tag in 6..=u8::MAX {
             let mut bytes = borsh::to_vec(&init()).unwrap();
             bytes[0] = tag;
 
@@ -143,7 +298,7 @@ mod tests {
 
     #[test]
     fn unpack_rejects_trailing_bytes() {
-        for instruction in [init(), commit(), reveal()] {
+        for instruction in every_variant() {
             let mut bytes = borsh::to_vec(&instruction).unwrap();
             bytes.push(0);
 
@@ -156,7 +311,7 @@ mod tests {
 
     #[test]
     fn unpack_rejects_truncated_data() {
-        for instruction in [init(), commit(), reveal()] {
+        for instruction in every_variant() {
             let bytes = borsh::to_vec(&instruction).unwrap();
 
             for length in 1..bytes.len() {

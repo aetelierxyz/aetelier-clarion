@@ -3,43 +3,191 @@ use std::fmt;
 use solana_program::program_error::ProgramError;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "idl", derive(codama::CodamaErrors))]
 #[repr(u32)]
 pub enum ClarionError {
+    #[cfg_attr(
+        feature = "idl",
+        codama(error(message = "instruction data does not decode"))
+    )]
     InstructionDataMalformed = 100,
+    #[cfg_attr(
+        feature = "idl",
+        codama(error(message = "account list length does not match the instruction"))
+    )]
     AccountCountMismatch = 101,
+    #[cfg_attr(feature = "idl", codama(error(message = "authority did not sign")))]
     AuthoritySignatureMissing = 102,
+    #[cfg_attr(
+        feature = "idl",
+        codama(error(message = "system program account has another id"))
+    )]
     SystemProgramMismatch = 103,
+    #[cfg_attr(
+        feature = "idl",
+        codama(error(message = "state account is not the derived address"))
+    )]
     StateAddressMismatch = 104,
+    #[cfg_attr(
+        feature = "idl",
+        codama(error(message = "state account already exists"))
+    )]
     StateAlreadyInitialized = 105,
+    #[cfg_attr(
+        feature = "idl",
+        codama(error(message = "state account is not owned by the program"))
+    )]
     StateOwnerMismatch = 106,
+    #[cfg_attr(
+        feature = "idl",
+        codama(error(message = "state account has another discriminator"))
+    )]
     StateDiscriminatorMismatch = 107,
+    #[cfg_attr(
+        feature = "idl",
+        codama(error(message = "state account data does not decode"))
+    )]
     StateDataMalformed = 108,
+    #[cfg_attr(
+        feature = "idl",
+        codama(error(message = "window account is not the derived address"))
+    )]
     WindowAddressMismatch = 109,
+    #[cfg_attr(
+        feature = "idl",
+        codama(error(message = "window account already exists"))
+    )]
     WindowAlreadyCommitted = 110,
+    #[cfg_attr(
+        feature = "idl",
+        codama(error(message = "window account is not owned by the program"))
+    )]
     WindowOwnerMismatch = 111,
+    #[cfg_attr(
+        feature = "idl",
+        codama(error(message = "window account has another discriminator"))
+    )]
     WindowDiscriminatorMismatch = 112,
+    #[cfg_attr(
+        feature = "idl",
+        codama(error(message = "window account data does not decode"))
+    )]
     WindowDataMalformed = 113,
+    #[cfg_attr(feature = "idl", codama(error(message = "window_len is zero")))]
     WindowLenZero = 114,
+    #[cfg_attr(
+        feature = "idl",
+        codama(error(message = "min_reveal_lag_slots is zero"))
+    )]
     MinRevealLagZero = 115,
+    #[cfg_attr(
+        feature = "idl",
+        codama(error(message = "signer is not the stored authority"))
+    )]
     AuthorityMismatch = 116,
+    #[cfg_attr(
+        feature = "idl",
+        codama(error(message = "window_id is not next_window_id"))
+    )]
     WindowIdNotSequential = 117,
+    #[cfg_attr(feature = "idl", codama(error(message = "window bounds overflow u64")))]
     WindowBoundsOverflow = 118,
+    #[cfg_attr(
+        feature = "idl",
+        codama(error(message = "slot_start is off the window grid"))
+    )]
     SlotStartOffGrid = 119,
+    #[cfg_attr(
+        feature = "idl",
+        codama(error(message = "slot_end is off the window grid"))
+    )]
     SlotEndOffGrid = 120,
+    #[cfg_attr(feature = "idl", codama(error(message = "slot_end has not passed")))]
     WindowNotClosed = 121,
+    #[cfg_attr(feature = "idl", codama(error(message = "window is already revealed")))]
     WindowAlreadyRevealed = 123,
+    #[cfg_attr(
+        feature = "idl",
+        codama(error(message = "min_reveal_lag_slots has not elapsed since commit"))
+    )]
     RevealLagNotElapsed = 124,
+    #[cfg_attr(
+        feature = "idl",
+        codama(error(message = "tx_landed exceeds tx_submitted"))
+    )]
     LandedExceedsSubmitted = 125,
+    #[cfg_attr(feature = "idl", codama(error(message = "program id did not sign")))]
     ProgramSignatureMissing = 126,
+    #[cfg_attr(
+        feature = "idl",
+        codama(error(message = "previous window is not revealed"))
+    )]
     PreviousWindowNotRevealed = 127,
+    #[cfg_attr(
+        feature = "idl",
+        codama(error(message = "aggregates are not in arm order"))
+    )]
     ArmOutOfOrder = 128,
+    #[cfg_attr(
+        feature = "idl",
+        codama(error(message = "min_reveal_lag_slots exceeds window_len"))
+    )]
     RevealLagExceedsWindowLen = 129,
+    #[cfg_attr(
+        feature = "idl",
+        codama(error(message = "genesis_slot is before the current slot"))
+    )]
     GenesisSlotPassed = 130,
+    #[cfg_attr(
+        feature = "idl",
+        codama(error(
+            message = "genesis_slot is more than MAX_GENESIS_LEAD_SLOTS ahead of the current slot"
+        ))
+    )]
     GenesisSlotTooFar = 131,
+    #[cfg_attr(
+        feature = "idl",
+        codama(error(message = "new authority is the stored authority"))
+    )]
+    AuthorityUnchanged = 132,
+    #[cfg_attr(
+        feature = "idl",
+        codama(error(
+            message = "authority proposal account is not the derived address"
+        ))
+    )]
+    ProposalAddressMismatch = 133,
+    #[cfg_attr(
+        feature = "idl",
+        codama(error(
+            message = "authority proposal account is not owned by the program"
+        ))
+    )]
+    ProposalOwnerMismatch = 134,
+    #[cfg_attr(
+        feature = "idl",
+        codama(error(message = "authority proposal account has another discriminator"))
+    )]
+    ProposalDiscriminatorMismatch = 135,
+    #[cfg_attr(
+        feature = "idl",
+        codama(error(message = "authority proposal account data does not decode"))
+    )]
+    ProposalDataMalformed = 136,
+    #[cfg_attr(
+        feature = "idl",
+        codama(error(message = "authority proposal account does not exist"))
+    )]
+    ProposalMissing = 137,
+    #[cfg_attr(
+        feature = "idl",
+        codama(error(message = "signer is not the proposed authority"))
+    )]
+    ProposedAuthorityMismatch = 138,
 }
 
 impl ClarionError {
-    const ALL: [Self; 31] = [
+    const ALL: [Self; 38] = [
         Self::InstructionDataMalformed,
         Self::AccountCountMismatch,
         Self::AuthoritySignatureMissing,
@@ -71,6 +219,13 @@ impl ClarionError {
         Self::RevealLagExceedsWindowLen,
         Self::GenesisSlotPassed,
         Self::GenesisSlotTooFar,
+        Self::AuthorityUnchanged,
+        Self::ProposalAddressMismatch,
+        Self::ProposalOwnerMismatch,
+        Self::ProposalDiscriminatorMismatch,
+        Self::ProposalDataMalformed,
+        Self::ProposalMissing,
+        Self::ProposedAuthorityMismatch,
     ];
 
     pub const fn code(self) -> u32 {
@@ -124,6 +279,21 @@ impl fmt::Display for ClarionError {
             Self::GenesisSlotTooFar => {
                 "genesis_slot is more than MAX_GENESIS_LEAD_SLOTS ahead of the current slot"
             }
+            Self::AuthorityUnchanged => "new authority is the stored authority",
+            Self::ProposalAddressMismatch => {
+                "authority proposal account is not the derived address"
+            }
+            Self::ProposalOwnerMismatch => {
+                "authority proposal account is not owned by the program"
+            }
+            Self::ProposalDiscriminatorMismatch => {
+                "authority proposal account has another discriminator"
+            }
+            Self::ProposalDataMalformed => {
+                "authority proposal account data does not decode"
+            }
+            Self::ProposalMissing => "authority proposal account does not exist",
+            Self::ProposedAuthorityMismatch => "signer is not the proposed authority",
         };
         formatter.write_str(message)
     }
@@ -141,7 +311,7 @@ impl From<ClarionError> for ProgramError {
 mod tests {
     use super::*;
 
-    const CODES: [(ClarionError, u32); 31] = [
+    const CODES: [(ClarionError, u32); 38] = [
         (ClarionError::InstructionDataMalformed, 100),
         (ClarionError::AccountCountMismatch, 101),
         (ClarionError::AuthoritySignatureMissing, 102),
@@ -173,6 +343,13 @@ mod tests {
         (ClarionError::RevealLagExceedsWindowLen, 129),
         (ClarionError::GenesisSlotPassed, 130),
         (ClarionError::GenesisSlotTooFar, 131),
+        (ClarionError::AuthorityUnchanged, 132),
+        (ClarionError::ProposalAddressMismatch, 133),
+        (ClarionError::ProposalOwnerMismatch, 134),
+        (ClarionError::ProposalDiscriminatorMismatch, 135),
+        (ClarionError::ProposalDataMalformed, 136),
+        (ClarionError::ProposalMissing, 137),
+        (ClarionError::ProposedAuthorityMismatch, 138),
     ];
 
     #[test]
@@ -199,7 +376,7 @@ mod tests {
         for (error, code) in CODES {
             assert_eq!(ClarionError::from_code(code), Some(error));
         }
-        for unassigned in [99, 122, 132] {
+        for unassigned in [99, 122, 139] {
             assert_eq!(ClarionError::from_code(unassigned), None);
         }
         let assigned = (0..=u32::from(u16::MAX))

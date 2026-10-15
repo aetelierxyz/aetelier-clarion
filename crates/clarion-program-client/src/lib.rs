@@ -1,4 +1,5 @@
 pub mod account;
+pub mod event;
 pub mod instruction;
 pub mod json;
 pub mod merkle;
@@ -6,15 +7,21 @@ pub mod root;
 pub mod transaction;
 
 pub use account::{
-    AccountKind, BoundsError, DecodeError, decode_state, decode_window, window_slots,
+    AccountKind, BoundsError, DecodeError, decode_proposal, decode_state, decode_window,
+    window_slots,
 };
 pub use clarion::{
-    ARM_AGGREGATES_SIZE, ARM_COUNT, Arm, ArmAggregates, ClarionError, ClarionInstruction,
-    STATE_DISCRIMINATOR, STATE_SEED, STATE_SIZE, State, WINDOW_DISCRIMINATOR,
-    WINDOW_SEED, WINDOW_SIZE, Window, state_address, window_address, window_bounds,
+    ARM_AGGREGATES_SIZE, ARM_COUNT, Arm, ArmAggregates, AuthorityProposal, ClarionError,
+    ClarionEvent, ClarionInstruction, PROPOSAL_DISCRIMINATOR, PROPOSAL_SEED,
+    PROPOSAL_SIZE, STATE_DISCRIMINATOR, STATE_SEED, STATE_SIZE, State,
+    WINDOW_DISCRIMINATOR, WINDOW_SEED, WINDOW_SIZE, Window, proposal_address,
+    state_address, window_address, window_bounds,
 };
-pub use instruction::{commit, init, reveal};
-pub use json::{JsonError, parse_aggregates, render_window};
+pub use event::{EventError, decode_events};
+pub use instruction::{
+    accept_authority, cancel_authority_proposal, commit, init, propose_authority, reveal,
+};
+pub use json::{JsonError, parse_aggregates, render_authority, render_window};
 pub use merkle::{
     DuplicateSignature, EMPTY_PREFIX, LEAF_PREFIX, NODE_PREFIX, RESULT_ROW_SIZE,
     ResultRow, empty_root, leaf_hash, leaf_hash_bytes, merkle_root,

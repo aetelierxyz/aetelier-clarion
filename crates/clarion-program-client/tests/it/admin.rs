@@ -9,9 +9,10 @@ use std::{
 
 use serde_json::{Value, json};
 use solana_keypair::{Keypair, Signer, write_keypair_file};
+use solana_program::pubkey::Pubkey;
 
 use crate::support::{
-    AGGREGATES_JSON, MERKLE_ROOT_HEX, PROGRAM_ID, state_key, window_key,
+    AGGREGATES_JSON, MERKLE_ROOT_HEX, PROGRAM_ID, proposal_key, state_key, window_key,
 };
 
 const CLOSED_RPC_URL: &str = "http://127.0.0.1:1";
@@ -22,6 +23,9 @@ const WINDOW_BASE64: &str = "AgMAAAAAAAAAggAAAAAAAACLAAAAAAAAAAABAgMEBQYHCAkKCww
                              JQEAAAMABgAAAAAAAAAAAAAAAAAAAAAAYOMWAAAAAAAAAAAAAAAAAAOQ\
                              AQAAkAEAAAQACACgDwAAAAAAAKCMAAAAAAAAgIQeAAAAAAAAAAAAAAAA\
                              APw=";
+const STATE_BASE64: &str = "AQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJ6AMAAAAAAACWAAAA\
+                            AAAAAJcAAAAAAAAABwAAAAAAAAD+";
+const PROPOSAL_BASE64: &str = "AwYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYG/A==";
 const INIT: [&str; 7] = [
     "init",
     "--genesis-slot",
@@ -61,6 +65,17 @@ fn window_account(owner: &str) -> Value {
         "rentEpoch": 0,
         "space": 254,
     }])
+}
+
+fn program_account(data: &str, space: usize) -> Value {
+    json!({
+        "lamports": 1_350_240,
+        "data": [data, "base64"],
+        "owner": PROGRAM_ID.to_string(),
+        "executable": false,
+        "rentEpoch": 0,
+        "space": space,
+    })
 }
 
 fn serve_one_response(value: Value) -> (String, Receiver<Value>) {
@@ -197,6 +212,8 @@ fn submission_without_the_authority_exits_two_before_any_request_or_key_file_rea
             "--aggregates",
             AGGREGATES_JSON,
         ],
+        vec!["propose-authority", "--new-authority", &program_id],
+        vec!["cancel-authority-proposal"],
     ] {
         let (url, requests) = serve_one_response(json!([null]));
         let globals = ["--rpc-url", &url, "--program-id", &program_id];
@@ -405,4 +422,130 @@ fn commit_requests_the_state_address_alone_and_reports_its_absence() {
         assert_failure_line(&output, 1),
         format!("state account {state_key} does not exist")
     );
+}
+
+#[test]
+fn authority_subcommand_help_lists_their_arguments_without_a_default() {
+    for (subcommand, usage) in [
+        (
+            "propose-authority",
+            "propose-authority --new-authority <PUBKEY>",
+        ),
+        (
+            "accept-authority",
+            "accept-authority --new-authority-keypair <PATH>",
+        ),
+        ("cancel-authority-proposal", "cancel-authority-proposal"),
+        ("show-authority", "show-authority"),
+    ] {
+        let output = admin(&[subcommand, "--help"]);
+
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert_eq!(output.status.code(), Some(0));
+        assert!(output.stderr.is_empty());
+        assert!(
+            stdout.contains(&format!(
+                "Usage: clarion-admin --rpc-url <URL> --program-id <PUBKEY> {usage}"
+            )),
+            "{stdout}"
+        );
+        assert!(!stdout.contains("[default: "), "{stdout}");
+    }
+}
+
+#[test]
+fn accept_authority_reads_the_new_authority_key_file_without_the_authority() {
+    let new_authority = key_path("accept_missing_new_authority", "new-authority.json");
+    let program_id = PROGRAM_ID.to_string();
+
+    let output = admin(&[
+        "--rpc-url",
+        CLOSED_RPC_URL,
+        "--program-id",
+        &program_id,
+        "accept-authority",
+        "--new-authority-keypair",
+        new_authority.to_str().unwrap(),
+    ]);
+
+    let line = assert_failure_line(&output, 1);
+    assert!(
+        line.starts_with(&format!(
+            "failed to read new authority keypair {}: ",
+            new_authority.display()
+        )),
+        "{line}"
+    );
+}
+
+#[test]
+fn accept_authority_requests_the_state_address_alone_and_reports_its_absence() {
+    let new_authority = written_key(
+        "accept_absent_state",
+        "new-authority.json",
+        &Keypair::new_from_array([6; 32]),
+    );
+    let program_id = PROGRAM_ID.to_string();
+    let state_key = state_key().to_string();
+    let (url, requests) = serve_one_response(json!([null]));
+
+    let output = admin(&[
+        "--rpc-url",
+        &url,
+        "--program-id",
+        &program_id,
+        "accept-authority",
+        "--new-authority-keypair",
+        new_authority.to_str().unwrap(),
+    ]);
+
+    let request = requests.try_recv().unwrap();
+    assert_eq!(request["method"], "getMultipleAccounts");
+    assert_eq!(request["params"][0], json!([state_key]));
+    assert_eq!(
+        assert_failure_line(&output, 1),
+        format!("state account {state_key} does not exist")
+    );
+}
+
+#[test]
+fn show_authority_requests_state_and_proposal_together_and_prints_both_authorities() {
+    let program_id = PROGRAM_ID.to_string();
+
+    for (proposal, proposed_authority) in [
+        (
+            program_account(PROPOSAL_BASE64, 34),
+            json!(Pubkey::new_from_array([6; 32]).to_string()),
+        ),
+        (Value::Null, Value::Null),
+    ] {
+        let (url, requests) =
+            serve_one_response(json!([program_account(STATE_BASE64, 66), proposal]));
+
+        let output = admin(&[
+            "--rpc-url",
+            &url,
+            "--program-id",
+            &program_id,
+            "show-authority",
+        ]);
+
+        let request = requests.try_recv().unwrap();
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert_eq!(request["method"], "getMultipleAccounts");
+        assert_eq!(
+            request["params"][0],
+            json!([state_key().to_string(), proposal_key().to_string()])
+        );
+        assert_eq!(output.status.code(), Some(0), "{stderr}");
+        assert!(stderr.is_empty(), "{stderr}");
+        let printed: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(
+            printed,
+            json!({
+                "authority": Pubkey::new_from_array([9; 32]).to_string(),
+                "proposed_authority": proposed_authority,
+            })
+        );
+    }
 }
