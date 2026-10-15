@@ -1,8 +1,8 @@
 use std::fmt;
 
 use clarion::{
-    STATE_DISCRIMINATOR, STATE_SIZE, State, WINDOW_DISCRIMINATOR, WINDOW_SIZE, Window,
-    window_bounds,
+    AuthorityProposal, PROPOSAL_DISCRIMINATOR, PROPOSAL_SIZE, STATE_DISCRIMINATOR,
+    STATE_SIZE, State, WINDOW_DISCRIMINATOR, WINDOW_SIZE, Window, window_bounds,
 };
 use thiserror::Error;
 
@@ -10,6 +10,7 @@ use thiserror::Error;
 pub enum AccountKind {
     State,
     Window,
+    Proposal,
 }
 
 impl fmt::Display for AccountKind {
@@ -17,6 +18,7 @@ impl fmt::Display for AccountKind {
         formatter.write_str(match self {
             Self::State => "state",
             Self::Window => "window",
+            Self::Proposal => "authority proposal",
         })
     }
 }
@@ -57,6 +59,17 @@ pub fn decode_state(data: &[u8]) -> Result<State, DecodeError> {
 pub fn decode_window(data: &[u8]) -> Result<Window, DecodeError> {
     Window::unpack(data).map_err(|_| {
         layout_error(AccountKind::Window, data, WINDOW_SIZE, WINDOW_DISCRIMINATOR)
+    })
+}
+
+pub fn decode_proposal(data: &[u8]) -> Result<AuthorityProposal, DecodeError> {
+    AuthorityProposal::unpack(data).map_err(|_| {
+        layout_error(
+            AccountKind::Proposal,
+            data,
+            PROPOSAL_SIZE,
+            PROPOSAL_DISCRIMINATOR,
+        )
     })
 }
 
@@ -130,6 +143,20 @@ mod tests {
             aggregates: Arm::ALL.map(|arm| ArmAggregates { arm, ..template }),
             bump: 253,
         }
+    }
+
+    fn proposal() -> AuthorityProposal {
+        AuthorityProposal {
+            discriminator: PROPOSAL_DISCRIMINATOR,
+            proposed_authority: Pubkey::new_from_array([5; 32]),
+            bump: 252,
+        }
+    }
+
+    fn proposal_bytes() -> [u8; PROPOSAL_SIZE] {
+        let mut data = [0u8; PROPOSAL_SIZE];
+        proposal().pack(&mut data).unwrap();
+        data
     }
 
     fn state_bytes() -> [u8; STATE_SIZE] {
@@ -233,6 +260,50 @@ mod tests {
     }
 
     #[test]
+    fn decode_proposal_returns_every_packed_field() {
+        assert_eq!(decode_proposal(&proposal_bytes()), Ok(proposal()));
+    }
+
+    #[test]
+    fn decode_proposal_rejects_another_length() {
+        let data = proposal_bytes();
+        let oversized = [data.as_slice(), &[0]].concat();
+
+        for (candidate, actual) in [
+            (&[][..], 0),
+            (&data[..PROPOSAL_SIZE - 1], PROPOSAL_SIZE - 1),
+            (oversized.as_slice(), PROPOSAL_SIZE + 1),
+            (&state_bytes()[..], STATE_SIZE),
+        ] {
+            assert_eq!(
+                decode_proposal(candidate),
+                Err(DecodeError::Length {
+                    account: AccountKind::Proposal,
+                    expected: 34,
+                    actual,
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn decode_proposal_rejects_another_discriminator() {
+        for actual in [0, STATE_DISCRIMINATOR, WINDOW_DISCRIMINATOR, u8::MAX] {
+            let mut data = proposal_bytes();
+            data[0] = actual;
+
+            assert_eq!(
+                decode_proposal(&data),
+                Err(DecodeError::Discriminator {
+                    account: AccountKind::Proposal,
+                    expected: 3,
+                    actual,
+                })
+            );
+        }
+    }
+
+    #[test]
     fn decode_errors_name_the_account_and_both_values() {
         assert_eq!(
             decode_state(&[]).unwrap_err().to_string(),
@@ -243,6 +314,10 @@ mod tests {
         assert_eq!(
             decode_window(&data).unwrap_err().to_string(),
             "window account discriminator is 1, expected 2"
+        );
+        assert_eq!(
+            decode_proposal(&[3]).unwrap_err().to_string(),
+            "authority proposal account holds 1 bytes, expected 34"
         );
     }
 

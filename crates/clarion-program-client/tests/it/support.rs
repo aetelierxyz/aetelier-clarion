@@ -2,8 +2,8 @@ use std::sync::LazyLock;
 
 use clarion_program_client::{
     ARM_COUNT, ArmAggregates, ClarionError, State, Window, authority_transaction, commit,
-    decode_state, decode_window, init, parse_aggregates, parse_merkle_root, reveal,
-    state_address, window_address, window_slots,
+    decode_state, decode_window, init, parse_aggregates, parse_merkle_root,
+    proposal_address, reveal, state_address, window_address, window_slots,
 };
 use solana_account::Account;
 use solana_keypair::{Keypair, Signer};
@@ -40,29 +40,34 @@ pub const AGGREGATES_JSON: &str = r#"[
 pub struct Harness {
     pub context: ProgramTestContext,
     pub authority: Keypair,
+    pub successor: Keypair,
     pub program: Keypair,
 }
 
 impl Harness {
     pub async fn start() -> Self {
         let authority = Keypair::new_from_array([1; 32]);
+        let successor = Keypair::new_from_array([3; 32]);
         let mut program_test = ProgramTest::new(
             "clarion",
             *PROGRAM_ID,
             processor!(clarion::process_instruction),
         );
-        program_test.add_account(
-            authority.pubkey(),
-            Account {
-                lamports: AUTHORITY_LAMPORTS,
-                owner: system_program::ID,
-                ..Account::default()
-            },
-        );
+        for signer in [&authority, &successor] {
+            program_test.add_account(
+                signer.pubkey(),
+                Account {
+                    lamports: AUTHORITY_LAMPORTS,
+                    owner: system_program::ID,
+                    ..Account::default()
+                },
+            );
+        }
         let context = program_test.start_with_context().await;
         Self {
             context,
             authority,
+            successor,
             program: program_keypair(),
         }
     }
@@ -145,6 +150,20 @@ impl Harness {
             .await
     }
 
+    pub async fn send_signed_by(
+        &mut self,
+        instruction: Instruction,
+        signer: &Keypair,
+    ) -> Result<(), BanksClientError> {
+        let blockhash = self.context.get_new_latest_blockhash().await.unwrap();
+        let transaction =
+            authority_transaction(instruction, signer, &[], blockhash).unwrap();
+        self.context
+            .banks_client
+            .process_transaction(transaction)
+            .await
+    }
+
     pub async fn exists(&mut self, address: &Pubkey) -> bool {
         self.context
             .banks_client
@@ -180,6 +199,10 @@ fn program_keypair() -> Keypair {
 
 pub fn state_key() -> Pubkey {
     state_address(&PROGRAM_ID).0
+}
+
+pub fn proposal_key() -> Pubkey {
+    proposal_address(&PROGRAM_ID).0
 }
 
 pub fn window_key(window_id: u64) -> Pubkey {

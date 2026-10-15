@@ -5,9 +5,11 @@ use crate::error::ClarionError;
 
 pub const STATE_SEED: &[u8] = b"clarion";
 pub const WINDOW_SEED: &[u8] = b"window";
+pub const PROPOSAL_SEED: &[u8] = b"authority_proposal";
 
 pub const STATE_DISCRIMINATOR: u8 = 1;
 pub const WINDOW_DISCRIMINATOR: u8 = 2;
+pub const PROPOSAL_DISCRIMINATOR: u8 = 3;
 
 pub const ARM_COUNT: usize = 4;
 
@@ -16,6 +18,7 @@ pub const MAX_GENESIS_LEAD_SLOTS: u64 = 432_000;
 pub const STATE_SIZE: usize = 66;
 pub const ARM_AGGREGATES_SIZE: usize = 45;
 pub const WINDOW_SIZE: usize = 254;
+pub const PROPOSAL_SIZE: usize = 34;
 
 #[derive(
     BorshSerialize, BorshDeserialize, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord,
@@ -125,12 +128,39 @@ impl Window {
     }
 }
 
+#[derive(BorshSerialize, BorshDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AuthorityProposal {
+    pub discriminator: u8,
+    pub proposed_authority: Pubkey,
+    pub bump: u8,
+}
+
+impl AuthorityProposal {
+    pub fn unpack(data: &[u8]) -> Result<Self, ClarionError> {
+        if data.first() != Some(&PROPOSAL_DISCRIMINATOR) {
+            return Err(ClarionError::ProposalDiscriminatorMismatch);
+        }
+        Self::try_from_slice(data).map_err(|_| ClarionError::ProposalDataMalformed)
+    }
+
+    pub fn pack(&self, data: &mut [u8]) -> Result<(), ClarionError> {
+        if data.len() != PROPOSAL_SIZE {
+            return Err(ClarionError::ProposalDataMalformed);
+        }
+        borsh::to_writer(data, self).map_err(|_| ClarionError::ProposalDataMalformed)
+    }
+}
+
 pub fn state_address(program_id: &Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[STATE_SEED], program_id)
 }
 
 pub fn window_address(program_id: &Pubkey, window_id: u64) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[WINDOW_SEED, &window_id.to_le_bytes()], program_id)
+}
+
+pub fn proposal_address(program_id: &Pubkey) -> (Pubkey, u8) {
+    Pubkey::find_program_address(&[PROPOSAL_SEED], program_id)
 }
 
 pub fn window_bounds(
@@ -156,6 +186,14 @@ mod tests {
             min_reveal_lag_slots: 150,
             next_window_id: 3,
             bump: 254,
+        }
+    }
+
+    fn proposal() -> AuthorityProposal {
+        AuthorityProposal {
+            discriminator: PROPOSAL_DISCRIMINATOR,
+            proposed_authority: Pubkey::new_from_array([5; 32]),
+            bump: 252,
         }
     }
 
@@ -211,6 +249,101 @@ mod tests {
     fn discriminators_are_one_and_two() {
         assert_eq!(STATE_DISCRIMINATOR, 1);
         assert_eq!(WINDOW_DISCRIMINATOR, 2);
+    }
+
+    #[test]
+    fn proposal_discriminator_is_three() {
+        assert_eq!(PROPOSAL_DISCRIMINATOR, 3);
+    }
+
+    #[test]
+    fn proposal_serialized_length_matches_its_size_constant() {
+        let bytes = borsh::to_vec(&proposal()).unwrap();
+
+        assert_eq!(bytes.len(), PROPOSAL_SIZE);
+        assert_eq!(bytes.len(), 34);
+    }
+
+    #[test]
+    fn proposal_layout_follows_field_order() {
+        let bytes = borsh::to_vec(&proposal()).unwrap();
+
+        assert_eq!(bytes[0], PROPOSAL_DISCRIMINATOR);
+        assert_eq!(bytes[1..33], [5; 32]);
+        assert_eq!(bytes[33], 252);
+    }
+
+    #[test]
+    fn proposal_round_trips_through_pack_and_unpack() {
+        let mut data = [0u8; PROPOSAL_SIZE];
+
+        proposal().pack(&mut data).unwrap();
+
+        assert_eq!(AuthorityProposal::unpack(&data), Ok(proposal()));
+    }
+
+    #[test]
+    fn proposal_unpack_rejects_another_discriminator() {
+        let mut data = borsh::to_vec(&proposal()).unwrap();
+        data[0] = STATE_DISCRIMINATOR;
+
+        assert_eq!(
+            AuthorityProposal::unpack(&data),
+            Err(ClarionError::ProposalDiscriminatorMismatch)
+        );
+        assert_eq!(
+            AuthorityProposal::unpack(&borsh::to_vec(&state()).unwrap()),
+            Err(ClarionError::ProposalDiscriminatorMismatch)
+        );
+        assert_eq!(
+            AuthorityProposal::unpack(&[]),
+            Err(ClarionError::ProposalDiscriminatorMismatch)
+        );
+    }
+
+    #[test]
+    fn proposal_unpack_rejects_truncated_and_oversized_data() {
+        let bytes = borsh::to_vec(&proposal()).unwrap();
+        let oversized = [bytes.as_slice(), &[0]].concat();
+
+        assert_eq!(
+            AuthorityProposal::unpack(&bytes[..PROPOSAL_SIZE - 1]),
+            Err(ClarionError::ProposalDataMalformed)
+        );
+        assert_eq!(
+            AuthorityProposal::unpack(&oversized),
+            Err(ClarionError::ProposalDataMalformed)
+        );
+    }
+
+    #[test]
+    fn proposal_pack_rejects_a_buffer_of_another_size() {
+        assert_eq!(
+            proposal().pack(&mut [0u8; PROPOSAL_SIZE - 1]),
+            Err(ClarionError::ProposalDataMalformed)
+        );
+        assert_eq!(
+            proposal().pack(&mut [0u8; PROPOSAL_SIZE + 1]),
+            Err(ClarionError::ProposalDataMalformed)
+        );
+    }
+
+    #[test]
+    fn proposal_address_derives_from_its_seed_and_program_id() {
+        let program_id = Pubkey::new_from_array([3; 32]);
+        let other_program_id = Pubkey::new_from_array([4; 32]);
+
+        let (proposal_key, proposal_bump) = proposal_address(&program_id);
+
+        assert_eq!(
+            Pubkey::create_program_address(
+                &[b"authority_proposal", &[proposal_bump]],
+                &program_id
+            ),
+            Ok(proposal_key)
+        );
+        assert_ne!(proposal_key, proposal_address(&other_program_id).0);
+        assert_ne!(proposal_key, state_address(&program_id).0);
     }
 
     #[test]

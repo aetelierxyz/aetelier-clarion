@@ -1,5 +1,6 @@
 use clarion::{
-    ARM_COUNT, ArmAggregates, ClarionInstruction, state_address, window_address,
+    ARM_COUNT, ArmAggregates, ClarionInstruction, proposal_address, state_address,
+    window_address,
 };
 use solana_program::{
     instruction::{AccountMeta, Instruction},
@@ -86,6 +87,49 @@ pub fn reveal(
             AccountMeta::new_readonly(*authority, true),
             AccountMeta::new_readonly(state_address(program_id).0, false),
             AccountMeta::new(window_address(program_id, window_id).0, false),
+        ],
+    )
+}
+
+pub fn propose_authority(
+    program_id: &Pubkey,
+    authority: &Pubkey,
+    new_authority: &Pubkey,
+) -> Instruction {
+    Instruction::new_with_borsh(
+        *program_id,
+        &ClarionInstruction::ProposeAuthority {
+            new_authority: *new_authority,
+        },
+        vec![
+            AccountMeta::new(*authority, true),
+            AccountMeta::new_readonly(state_address(program_id).0, false),
+            AccountMeta::new(proposal_address(program_id).0, false),
+            AccountMeta::new_readonly(system_program::ID, false),
+        ],
+    )
+}
+
+pub fn accept_authority(program_id: &Pubkey, new_authority: &Pubkey) -> Instruction {
+    Instruction::new_with_borsh(
+        *program_id,
+        &ClarionInstruction::AcceptAuthority,
+        vec![
+            AccountMeta::new(*new_authority, true),
+            AccountMeta::new(state_address(program_id).0, false),
+            AccountMeta::new(proposal_address(program_id).0, false),
+        ],
+    )
+}
+
+pub fn cancel_authority_proposal(program_id: &Pubkey, authority: &Pubkey) -> Instruction {
+    Instruction::new_with_borsh(
+        *program_id,
+        &ClarionInstruction::CancelAuthorityProposal,
+        vec![
+            AccountMeta::new(*authority, true),
+            AccountMeta::new_readonly(state_address(program_id).0, false),
+            AccountMeta::new(proposal_address(program_id).0, false),
         ],
     )
 }
@@ -248,6 +292,108 @@ mod tests {
                 window_id: 4,
                 aggregates,
             })
+        );
+    }
+
+    #[test]
+    fn propose_authority_accounts_follow_the_program_order_and_privileges() {
+        let new_authority = Pubkey::new_from_array([6; 32]);
+
+        let instruction = propose_authority(&PROGRAM_ID, &AUTHORITY, &new_authority);
+
+        assert_eq!(instruction.program_id, PROGRAM_ID);
+        assert_eq!(
+            instruction.accounts,
+            vec![
+                AccountMeta {
+                    pubkey: AUTHORITY,
+                    is_signer: true,
+                    is_writable: true,
+                },
+                AccountMeta {
+                    pubkey: state_address(&PROGRAM_ID).0,
+                    is_signer: false,
+                    is_writable: false,
+                },
+                AccountMeta {
+                    pubkey: proposal_address(&PROGRAM_ID).0,
+                    is_signer: false,
+                    is_writable: true,
+                },
+                AccountMeta {
+                    pubkey: system_program::ID,
+                    is_signer: false,
+                    is_writable: false,
+                },
+            ]
+        );
+        assert_eq!(
+            ClarionInstruction::unpack(&instruction.data),
+            Ok(ClarionInstruction::ProposeAuthority { new_authority })
+        );
+    }
+
+    #[test]
+    fn accept_authority_accounts_follow_the_program_order_and_privileges() {
+        let new_authority = Pubkey::new_from_array([6; 32]);
+
+        let instruction = accept_authority(&PROGRAM_ID, &new_authority);
+
+        assert_eq!(instruction.program_id, PROGRAM_ID);
+        assert_eq!(
+            instruction.accounts,
+            vec![
+                AccountMeta {
+                    pubkey: new_authority,
+                    is_signer: true,
+                    is_writable: true,
+                },
+                AccountMeta {
+                    pubkey: state_address(&PROGRAM_ID).0,
+                    is_signer: false,
+                    is_writable: true,
+                },
+                AccountMeta {
+                    pubkey: proposal_address(&PROGRAM_ID).0,
+                    is_signer: false,
+                    is_writable: true,
+                },
+            ]
+        );
+        assert_eq!(
+            ClarionInstruction::unpack(&instruction.data),
+            Ok(ClarionInstruction::AcceptAuthority)
+        );
+    }
+
+    #[test]
+    fn cancel_authority_proposal_accounts_follow_the_program_order_and_privileges() {
+        let instruction = cancel_authority_proposal(&PROGRAM_ID, &AUTHORITY);
+
+        assert_eq!(instruction.program_id, PROGRAM_ID);
+        assert_eq!(
+            instruction.accounts,
+            vec![
+                AccountMeta {
+                    pubkey: AUTHORITY,
+                    is_signer: true,
+                    is_writable: true,
+                },
+                AccountMeta {
+                    pubkey: state_address(&PROGRAM_ID).0,
+                    is_signer: false,
+                    is_writable: false,
+                },
+                AccountMeta {
+                    pubkey: proposal_address(&PROGRAM_ID).0,
+                    is_signer: false,
+                    is_writable: true,
+                },
+            ]
+        );
+        assert_eq!(
+            ClarionInstruction::unpack(&instruction.data),
+            Ok(ClarionInstruction::CancelAuthorityProposal)
         );
     }
 

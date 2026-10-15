@@ -9,9 +9,11 @@ use clap::{
     error::{ContextKind, ContextValue, ErrorKind},
 };
 use clarion_program_client::{
-    ARM_COUNT, ArmAggregates, ClarionError, State, authority_transaction, commit,
+    ARM_COUNT, ArmAggregates, ClarionError, State, accept_authority,
+    authority_transaction, cancel_authority_proposal, commit, decode_proposal,
     decode_state, decode_window, init, parse_aggregates, parse_merkle_root,
-    render_window, reveal, state_address, window_address, window_slots,
+    proposal_address, propose_authority, render_authority, render_window, reveal,
+    state_address, window_address, window_slots,
 };
 use solana_commitment_config::CommitmentConfig;
 use solana_keypair::{Keypair, Signature, Signer, read_keypair_file};
@@ -30,7 +32,7 @@ const USAGE_EXIT_CODE: u8 = 2;
 #[command(
     name = "clarion-admin",
     version,
-    about = "Init, Commit, Reveal and show for the clarion program",
+    about = "Init, Commit, Reveal, authority rotation and show for the clarion program",
     arg_required_else_help = false,
     disable_help_subcommand = true
 )]
@@ -42,7 +44,8 @@ struct Cli {
     #[arg(
         long,
         value_name = "PATH",
-        help = "Authority keypair file, required by init, commit and reveal"
+        help = "Authority keypair file, required by init, commit, reveal, \
+                propose-authority and cancel-authority-proposal"
     )]
     authority: Option<PathBuf>,
     #[command(subcommand)]
@@ -53,11 +56,25 @@ struct Cli {
 enum Command {
     #[command(flatten)]
     Submit(Submission),
+    #[command(
+        about = "Accept the pending authority proposal, signed and paid by the proposed \
+                 authority"
+    )]
+    AcceptAuthority {
+        #[arg(
+            long,
+            value_name = "PATH",
+            help = "Keypair file of the proposed authority"
+        )]
+        new_authority_keypair: PathBuf,
+    },
     #[command(about = "Print a window account as JSON")]
     Show {
         #[arg(long, value_name = "ID", help = "Window to print")]
         window_id: u64,
     },
+    #[command(about = "Print the stored authority and the proposed authority as JSON")]
+    ShowAuthority,
 }
 
 #[derive(Debug, Subcommand)]
@@ -110,6 +127,15 @@ enum Submission {
         )]
         aggregates: [ArmAggregates; ARM_COUNT],
     },
+    #[command(about = "Propose a new authority, signed by the stored authority")]
+    ProposeAuthority {
+        #[arg(long, value_name = "PUBKEY", help = "Proposed authority, base58")]
+        new_authority: Pubkey,
+    },
+    #[command(
+        about = "Close the pending authority proposal, signed by the stored authority"
+    )]
+    CancelAuthorityProposal,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -222,15 +248,8 @@ fn run(
         Command::Submit(submission) => {
             let authority_path =
                 cli.authority.as_deref().ok_or_else(missing_authority)?;
-            let authority = read_keypair("authority", authority_path)?;
-            if authority.pubkey() == *program_id {
-                return Err(format!(
-                    "authority keypair {} holds the program id {program_id}, the \
-                     authority must be a separate key",
-                    authority_path.display()
-                )
-                .into());
-            }
+            let authority =
+                read_signer("authority", authority_path, program_id, &read_keypair)?;
             let cosigners =
                 cosigners(submission, program_id, |path| read_keypair("program", path))?;
             let instruction = instruction_for(
@@ -242,7 +261,21 @@ fn run(
             )?;
             submit(rpc, instruction, &authority, &cosigners)
         }
+        Command::AcceptAuthority {
+            new_authority_keypair,
+        } => {
+            let new_authority = read_signer(
+                "new authority",
+                new_authority_keypair,
+                program_id,
+                &read_keypair,
+            )?;
+            read_state(rpc, program_id)?;
+            let instruction = accept_authority(program_id, &new_authority.pubkey());
+            submit(rpc, instruction, &new_authority, &[])
+        }
         Command::Show { window_id } => show(rpc, program_id, *window_id),
+        Command::ShowAuthority => show_authority(rpc, program_id),
     }
 }
 
@@ -274,7 +307,33 @@ fn instruction_for(
             read_window_data(*window_id)?;
             reveal(program_id, authority, *window_id, *aggregates)
         }
+        Submission::ProposeAuthority { new_authority } => {
+            read_state()?;
+            propose_authority(program_id, authority, new_authority)
+        }
+        Submission::CancelAuthorityProposal => {
+            read_state()?;
+            cancel_authority_proposal(program_id, authority)
+        }
     })
+}
+
+fn read_signer(
+    role: &str,
+    path: &Path,
+    program_id: &Pubkey,
+    read_keypair: impl Fn(&str, &Path) -> Result<Keypair, Box<dyn Error>>,
+) -> Result<Keypair, Box<dyn Error>> {
+    let signer = read_keypair(role, path)?;
+    if signer.pubkey() == *program_id {
+        return Err(format!(
+            "{role} keypair {} holds the program id {program_id}, the authority must \
+             be a separate key",
+            path.display()
+        )
+        .into());
+    }
+    Ok(signer)
 }
 
 fn load_keypair(role: &str, path: &Path) -> Result<Keypair, Box<dyn Error>> {
@@ -304,7 +363,10 @@ fn cosigners(
                 .into())
             }
         }
-        Submission::Commit { .. } | Submission::Reveal { .. } => Ok(Vec::new()),
+        Submission::Commit { .. }
+        | Submission::Reveal { .. }
+        | Submission::ProposeAuthority { .. }
+        | Submission::CancelAuthorityProposal => Ok(Vec::new()),
     }
 }
 
@@ -343,6 +405,30 @@ fn show(
 ) -> Result<String, Box<dyn Error>> {
     let (window_key, data) = read_window_data(rpc, program_id, window_id)?;
     Ok(render_window(&window_key, &decode_window(&data)?)?)
+}
+
+fn show_authority(
+    rpc: &RpcClient,
+    program_id: &Pubkey,
+) -> Result<String, Box<dyn Error>> {
+    let (state_key, _) = state_address(program_id);
+    let (proposal_key, _) = proposal_address(program_id);
+    let mut accounts = rpc
+        .get_multiple_accounts(&[state_key, proposal_key])?
+        .into_iter()
+        .map(|account| account.map(|account| account.data));
+    let state_data = accounts
+        .next()
+        .flatten()
+        .ok_or_else(|| format!("state account {state_key} does not exist"))?;
+    let state = decode_state(&state_data)?;
+    let proposal = accounts
+        .next()
+        .flatten()
+        .filter(|data| !data.is_empty())
+        .map(|data| decode_proposal(&data))
+        .transpose()?;
+    Ok(render_authority(&state, proposal.as_ref())?)
 }
 
 fn submit(
@@ -401,6 +487,9 @@ mod tests {
         "--lag",
         "151",
     ];
+    const PROPOSAL_BASE64: &str = "AwYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYG/A==";
+    const PROPOSED_AUTHORITY: Pubkey = Pubkey::new_from_array([6; 32]);
+    const PROPOSED_AUTHORITY_BASE58: &str = "QWmroo4YnnMqYW3cnxWkFdaTxGD3P7vMSzwMHGbUzwF";
     const PROGRAM_KEYPAIR_OPTION: [&str; 2] = ["--program-keypair", "program.json"];
     const AUTHORITY_OPTION: [&str; 2] = ["--authority", "authority.json"];
     const ROOT: &str = "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a";
@@ -450,8 +539,55 @@ mod tests {
     fn submission(arguments: &[&str]) -> Submission {
         match parse(arguments).unwrap().command {
             Command::Submit(submission) => submission,
-            Command::Show { window_id } => panic!("show of window {window_id}"),
+            other => panic!("not a submission: {other:?}"),
         }
+    }
+
+    fn propose_arguments() -> Vec<&'static str> {
+        vec![
+            "propose-authority",
+            "--new-authority",
+            PROPOSED_AUTHORITY_BASE58,
+        ]
+    }
+
+    fn accept_cli(program_id: &str) -> Cli {
+        Cli::try_parse_from([
+            "clarion-admin",
+            "--rpc-url",
+            "mock",
+            "--program-id",
+            program_id,
+            "accept-authority",
+            "--new-authority-keypair",
+            "new-authority.json",
+        ])
+        .unwrap()
+    }
+
+    fn state_and_proposal(proposal: Value) -> Value {
+        response(json!([
+            {
+                "lamports": 1_350_240,
+                "data": [STATE_BASE64, "base64"],
+                "owner": PROGRAM_ID,
+                "executable": false,
+                "rentEpoch": 0,
+                "space": 66,
+            },
+            proposal,
+        ]))
+    }
+
+    fn proposal_account() -> Value {
+        json!({
+            "lamports": 1_127_520,
+            "data": [PROPOSAL_BASE64, "base64"],
+            "owner": PROGRAM_ID,
+            "executable": false,
+            "rentEpoch": 0,
+            "space": 34,
+        })
     }
 
     fn state() -> State {
@@ -545,14 +681,94 @@ mod tests {
     }
 
     #[test]
-    fn subcommands_are_exactly_init_commit_reveal_show() {
+    fn subcommands_are_exactly_the_submissions_then_accept_and_the_shows() {
         let command = Cli::command();
         let names: Vec<&str> = command
             .get_subcommands()
             .map(|subcommand| subcommand.get_name())
             .collect();
 
-        assert_eq!(names, ["init", "commit", "reveal", "show"]);
+        assert_eq!(
+            names,
+            [
+                "init",
+                "commit",
+                "reveal",
+                "propose-authority",
+                "cancel-authority-proposal",
+                "accept-authority",
+                "show",
+                "show-authority",
+            ]
+        );
+    }
+
+    #[test]
+    fn propose_authority_takes_a_base58_new_authority() {
+        let arguments = propose_arguments();
+
+        let cli = parse(&arguments).unwrap();
+
+        assert!(matches!(
+            cli.command,
+            Command::Submit(Submission::ProposeAuthority { new_authority })
+                if new_authority == PROPOSED_AUTHORITY
+        ));
+    }
+
+    #[test]
+    fn propose_authority_requires_a_pubkey() {
+        let missing = parse(&["propose-authority"]).unwrap_err();
+        let invalid =
+            parse(&["propose-authority", "--new-authority", "not-a-pubkey"]).unwrap_err();
+
+        assert_eq!(missing.kind(), ErrorKind::MissingRequiredArgument);
+        assert_eq!(
+            usage_line(&missing),
+            "the following required arguments were not provided: --new-authority <PUBKEY>"
+        );
+        assert_eq!(invalid.kind(), ErrorKind::ValueValidation);
+    }
+
+    #[test]
+    fn accept_authority_takes_the_new_authority_keypair_path() {
+        let cli = accept_cli(PROGRAM_ID);
+
+        assert_eq!(cli.authority, None);
+        assert!(matches!(
+            cli.command,
+            Command::AcceptAuthority { new_authority_keypair }
+                if new_authority_keypair == Path::new("new-authority.json")
+        ));
+    }
+
+    #[test]
+    fn accept_authority_requires_the_new_authority_keypair() {
+        let error = parse(&["accept-authority"]).unwrap_err();
+
+        assert_eq!(error.kind(), ErrorKind::MissingRequiredArgument);
+        assert_eq!(
+            usage_line(&error),
+            "the following required arguments were not provided: \
+             --new-authority-keypair <PATH>"
+        );
+    }
+
+    #[test]
+    fn cancel_and_show_authority_take_no_arguments() {
+        assert!(matches!(
+            parse(&["cancel-authority-proposal"]).unwrap().command,
+            Command::Submit(Submission::CancelAuthorityProposal)
+        ));
+        assert!(matches!(
+            parse(&["show-authority"]).unwrap().command,
+            Command::ShowAuthority
+        ));
+        for subcommand in ["cancel-authority-proposal", "show-authority"] {
+            let outcome = parse(&[subcommand, "--new-authority", PROGRAM_ID]);
+
+            assert_eq!(outcome.unwrap_err().kind(), ErrorKind::UnknownArgument);
+        }
     }
 
     #[test]
@@ -659,7 +875,15 @@ mod tests {
 
     #[test]
     fn program_keypair_belongs_to_init_alone() {
-        for subcommand in ["commit", "reveal", "show"] {
+        for subcommand in [
+            "commit",
+            "reveal",
+            "show",
+            "propose-authority",
+            "cancel-authority-proposal",
+            "accept-authority",
+            "show-authority",
+        ] {
             let outcome = parse(&[subcommand, "--program-keypair", "program.json"]);
 
             assert_eq!(outcome.unwrap_err().kind(), ErrorKind::UnknownArgument);
@@ -805,7 +1029,8 @@ mod tests {
             assert_eq!(
                 usage_line(&error),
                 "'clarion-admin' requires a subcommand but one was not provided \
-                 [subcommands: init, commit, reveal, show]"
+                 [subcommands: init, commit, reveal, propose-authority, \
+                 cancel-authority-proposal, accept-authority, show, show-authority]"
             );
         }
     }
@@ -819,6 +1044,10 @@ mod tests {
             vec!["clarion-admin", "commit", "--help"],
             vec!["clarion-admin", "reveal", "--help"],
             vec!["clarion-admin", "show", "--help"],
+            vec!["clarion-admin", "propose-authority", "--help"],
+            vec!["clarion-admin", "cancel-authority-proposal", "--help"],
+            vec!["clarion-admin", "accept-authority", "--help"],
+            vec!["clarion-admin", "show-authority", "--help"],
         ] {
             let error = Cli::try_parse_from(arguments).unwrap_err();
 
@@ -1006,10 +1235,82 @@ mod tests {
     }
 
     #[test]
-    fn commit_and_reveal_read_no_program_keypair() {
+    fn propose_authority_reads_state_then_names_the_new_authority() {
+        let arguments = propose_arguments();
+        let reads = RefCell::new(Vec::new());
+
+        let instruction = instruction_for(
+            &submission(&arguments),
+            &program_id(),
+            &AUTHORITY,
+            || {
+                reads.borrow_mut().push("state");
+                Ok(state())
+            },
+            unread_window,
+        )
+        .unwrap();
+
+        assert_eq!(*reads.borrow(), ["state"]);
+        assert_eq!(
+            ClarionInstruction::unpack(&instruction.data),
+            Ok(ClarionInstruction::ProposeAuthority {
+                new_authority: PROPOSED_AUTHORITY,
+            })
+        );
+        assert_eq!(
+            instruction,
+            propose_authority(&program_id(), &AUTHORITY, &PROPOSED_AUTHORITY)
+        );
+    }
+
+    #[test]
+    fn cancel_authority_proposal_reads_state_then_names_the_authority() {
+        let instruction = instruction_for(
+            &submission(&["cancel-authority-proposal"]),
+            &program_id(),
+            &AUTHORITY,
+            || Ok(state()),
+            unread_window,
+        )
+        .unwrap();
+
+        assert_eq!(
+            instruction,
+            cancel_authority_proposal(&program_id(), &AUTHORITY)
+        );
+    }
+
+    #[test]
+    fn authority_submissions_report_a_state_that_cannot_be_read() {
+        let arguments = propose_arguments();
+
+        for submission in [
+            submission(&arguments),
+            submission(&["cancel-authority-proposal"]),
+        ] {
+            let error = instruction_for(
+                &submission,
+                &program_id(),
+                &AUTHORITY,
+                unread_state,
+                unread_window,
+            )
+            .unwrap_err();
+
+            assert_eq!(error.to_string(), "state is not read");
+        }
+    }
+
+    #[test]
+    fn submissions_other_than_init_read_no_program_keypair() {
+        let propose = propose_arguments();
+
         for submission in [
             submission(&["commit", "--window-id", "7", "--root", ROOT]),
             submission(&["reveal", "--window-id", "3", "--aggregates", &arms(4)]),
+            submission(&propose),
+            submission(&["cancel-authority-proposal"]),
         ] {
             let cosigners =
                 cosigners(&submission, &program_id(), |_| Err("unread".into())).unwrap();
@@ -1078,6 +1379,9 @@ mod tests {
             (105, ClarionError::StateAlreadyInitialized),
             (117, ClarionError::WindowIdNotSequential),
             (126, ClarionError::ProgramSignatureMissing),
+            (132, ClarionError::AuthorityUnchanged),
+            (137, ClarionError::ProposalMissing),
+            (138, ClarionError::ProposedAuthorityMismatch),
         ] {
             assert_eq!(rejection(&landed(code)), Some(expected));
             assert_eq!(rejection(&preflight(code)), Some(expected));
@@ -1090,7 +1394,7 @@ mod tests {
             landed(99),
             landed(122),
             preflight(122),
-            preflight(132),
+            preflight(139),
             ClientError::from(TransactionError::AccountInUse),
             ClientError::from(TransactionError::InstructionError(
                 0,
@@ -1429,6 +1733,239 @@ mod tests {
     }
 
     #[test]
+    fn propose_run_submits_the_new_authority_signed_by_the_authority() {
+        let authority = signer();
+        let arguments = propose_arguments();
+        let cli = with_authority(&arguments);
+        let rpc = RpcClient::new_mock_with_mocks(
+            "succeeds",
+            Mocks::from([(RpcRequest::GetMultipleAccounts, present(STATE_BASE64, 66))]),
+        );
+
+        let output = run(&cli, &rpc, |role, path| match role {
+            "authority" => Ok(signer()),
+            _ => Err(format!("{role} keypair {}", path.display()).into()),
+        })
+        .unwrap();
+
+        assert_eq!(
+            output,
+            signature_on_the_mock_blockhash(
+                propose_authority(
+                    &program_id(),
+                    &authority.pubkey(),
+                    &PROPOSED_AUTHORITY
+                ),
+                &authority,
+                &[],
+            )
+            .to_string()
+        );
+    }
+
+    #[test]
+    fn cancel_run_submits_signed_by_the_authority() {
+        let authority = signer();
+        let cli = with_authority(&["cancel-authority-proposal"]);
+        let rpc = RpcClient::new_mock_with_mocks(
+            "succeeds",
+            Mocks::from([(RpcRequest::GetMultipleAccounts, present(STATE_BASE64, 66))]),
+        );
+
+        let output = run(&cli, &rpc, |role, path| match role {
+            "authority" => Ok(signer()),
+            _ => Err(format!("{role} keypair {}", path.display()).into()),
+        })
+        .unwrap();
+
+        assert_eq!(
+            output,
+            signature_on_the_mock_blockhash(
+                cancel_authority_proposal(&program_id(), &authority.pubkey()),
+                &authority,
+                &[],
+            )
+            .to_string()
+        );
+    }
+
+    #[test]
+    fn accept_run_is_signed_and_paid_by_the_new_authority_keypair_alone() {
+        let new_authority = Keypair::new_from_array([6; 32]);
+        let reads = RefCell::new(Vec::new());
+        let rpc = RpcClient::new_mock_with_mocks(
+            "succeeds",
+            Mocks::from([(RpcRequest::GetMultipleAccounts, present(STATE_BASE64, 66))]),
+        );
+
+        let output = run(&accept_cli(PROGRAM_ID), &rpc, |role, path| {
+            reads
+                .borrow_mut()
+                .push(format!("{role} keypair {}", path.display()));
+            Ok(new_authority.insecure_clone())
+        })
+        .unwrap();
+
+        assert_eq!(
+            *reads.borrow(),
+            ["new authority keypair new-authority.json"]
+        );
+        assert_eq!(
+            output,
+            signature_on_the_mock_blockhash(
+                accept_authority(&program_id(), &new_authority.pubkey()),
+                &new_authority,
+                &[],
+            )
+            .to_string()
+        );
+    }
+
+    #[test]
+    fn accept_run_stops_at_an_unreadable_new_authority_keypair() {
+        let rpc = RpcClient::new_mock("fails");
+
+        let error = run(&accept_cli(PROGRAM_ID), &rpc, |role, path| {
+            Err(format!("{role} keypair {}", path.display()).into())
+        })
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "new authority keypair new-authority.json"
+        );
+    }
+
+    #[test]
+    fn accept_run_refuses_a_new_authority_keypair_holding_the_program_id() {
+        let program = Keypair::new_from_array([42; 32]);
+        let program_id = program.pubkey().to_string();
+        let rpc = RpcClient::new_mock("fails");
+
+        let error = run(&accept_cli(&program_id), &rpc, |_, _| {
+            Ok(program.insecure_clone())
+        })
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "new authority keypair new-authority.json holds the program id \
+                 {program_id}, the authority must be a separate key"
+            )
+        );
+    }
+
+    #[test]
+    fn accept_run_stops_at_an_absent_state_account() {
+        let rpc = RpcClient::new_mock("succeeds");
+
+        let error = run(&accept_cli(PROGRAM_ID), &rpc, |_, _| {
+            Ok(Keypair::new_from_array([6; 32]))
+        })
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "state account {} does not exist",
+                state_address(&program_id()).0
+            )
+        );
+    }
+
+    #[test]
+    fn show_authority_prints_the_pending_proposed_authority() {
+        let rpc = RpcClient::new_mock_with_mocks(
+            "succeeds",
+            Mocks::from([(
+                RpcRequest::GetMultipleAccounts,
+                state_and_proposal(proposal_account()),
+            )]),
+        );
+
+        let output = run(&parse(&["show-authority"]).unwrap(), &rpc, |role, path| {
+            Err(format!("{role} keypair {}", path.display()).into())
+        })
+        .unwrap();
+
+        assert_eq!(
+            serde_json::from_str::<Value>(&output).unwrap(),
+            json!({
+                "authority": AUTHORITY.to_string(),
+                "proposed_authority": PROPOSED_AUTHORITY.to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn show_authority_prints_null_without_a_proposal() {
+        let closed = json!({
+            "lamports": 1_000,
+            "data": ["", "base64"],
+            "owner": "11111111111111111111111111111111",
+            "executable": false,
+            "rentEpoch": 0,
+            "space": 0,
+        });
+
+        for proposal in [Value::Null, closed] {
+            let rpc = RpcClient::new_mock_with_mocks(
+                "succeeds",
+                Mocks::from([(
+                    RpcRequest::GetMultipleAccounts,
+                    state_and_proposal(proposal),
+                )]),
+            );
+
+            let output = show_authority(&rpc, &program_id()).unwrap();
+
+            assert_eq!(
+                serde_json::from_str::<Value>(&output).unwrap(),
+                json!({
+                    "authority": AUTHORITY.to_string(),
+                    "proposed_authority": null,
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn show_authority_names_an_absent_state_with_its_address() {
+        let rpc = RpcClient::new_mock("succeeds");
+
+        let error = show_authority(&rpc, &program_id()).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "state account {} does not exist",
+                state_address(&program_id()).0
+            )
+        );
+    }
+
+    #[test]
+    fn show_authority_reports_proposal_data_that_does_not_decode() {
+        let mut malformed = proposal_account();
+        malformed["data"] = json!(["Aw==", "base64"]);
+        let rpc = RpcClient::new_mock_with_mocks(
+            "succeeds",
+            Mocks::from([(
+                RpcRequest::GetMultipleAccounts,
+                state_and_proposal(malformed),
+            )]),
+        );
+
+        let error = show_authority(&rpc, &program_id()).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "authority proposal account holds 1 bytes, expected 34"
+        );
+    }
+
+    #[test]
     fn show_run_reads_no_keypair_with_or_without_an_authority() {
         let rpc = RpcClient::new_mock("succeeds");
 
@@ -1456,10 +1993,14 @@ mod tests {
         let rpc = RpcClient::new_mock("fails");
         let reads = RefCell::new(Vec::new());
 
+        let propose = propose_arguments();
+
         for arguments in [
             init_arguments(),
             vec!["commit", "--window-id", "7", "--root", ROOT],
             vec!["reveal", "--window-id", "3", "--aggregates", &arms(4)],
+            propose,
+            vec!["cancel-authority-proposal"],
         ] {
             let error = run(&parse(&arguments).unwrap(), &rpc, |role, path| {
                 reads
@@ -1503,11 +2044,14 @@ mod tests {
         let program_id = program.pubkey().to_string();
         let globals = ["clarion-admin", "--rpc-url", "mock", "--program-id"];
         let rpc = RpcClient::new_mock("fails");
+        let propose = propose_arguments();
 
         for arguments in [
             init_arguments(),
             vec!["commit", "--window-id", "7", "--root", ROOT],
             vec!["reveal", "--window-id", "3", "--aggregates", &arms(4)],
+            propose,
+            vec!["cancel-authority-proposal"],
         ] {
             let cli = Cli::try_parse_from(
                 [

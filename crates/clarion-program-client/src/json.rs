@@ -1,6 +1,6 @@
 use std::fmt;
 
-use clarion::{ARM_COUNT, Arm, ArmAggregates, Window};
+use clarion::{ARM_COUNT, Arm, ArmAggregates, AuthorityProposal, State, Window};
 use serde::{
     Deserialize, Deserializer, Serialize,
     de::{MapAccess, Visitor, value::MapAccessDeserializer},
@@ -23,6 +23,8 @@ pub enum JsonError {
     ArmSet,
     #[error("window does not render as JSON: {0}")]
     Window(#[source] serde_json::Error),
+    #[error("authority does not render as JSON: {0}")]
+    Authority(#[source] serde_json::Error),
 }
 
 #[derive(Serialize, Deserialize)]
@@ -89,6 +91,12 @@ struct WindowFields {
     bump: u8,
 }
 
+#[derive(Serialize)]
+struct AuthorityFields {
+    authority: String,
+    proposed_authority: Option<String>,
+}
+
 pub fn parse_aggregates(text: &str) -> Result<[ArmAggregates; ARM_COUNT], JsonError> {
     let mut entries: Vec<ArmAggregates> = serde_json::from_str::<Vec<ArmEntry>>(text)
         .map_err(JsonError::Aggregates)?
@@ -125,9 +133,21 @@ pub fn render_window(address: &Pubkey, window: &Window) -> Result<String, JsonEr
     serde_json::to_string_pretty(&fields).map_err(JsonError::Window)
 }
 
+pub fn render_authority(
+    state: &State,
+    proposal: Option<&AuthorityProposal>,
+) -> Result<String, JsonError> {
+    let fields = AuthorityFields {
+        authority: state.authority.to_string(),
+        proposed_authority: proposal
+            .map(|pending| pending.proposed_authority.to_string()),
+    };
+    serde_json::to_string_pretty(&fields).map_err(JsonError::Authority)
+}
+
 #[cfg(test)]
 mod tests {
-    use clarion::WINDOW_DISCRIMINATOR;
+    use clarion::{PROPOSAL_DISCRIMINATOR, STATE_DISCRIMINATOR, WINDOW_DISCRIMINATOR};
     use serde_json::{Value, json};
 
     use super::*;
@@ -543,6 +563,56 @@ mod tests {
         assert_eq!(
             rendered["aggregates"][3]["fee_total_lamports"].as_u64(),
             Some(u64::MAX)
+        );
+    }
+
+    fn state() -> State {
+        State {
+            discriminator: STATE_DISCRIMINATOR,
+            authority: Pubkey::new_from_array([0; 32]),
+            genesis_slot: 1_000,
+            window_len: 150,
+            min_reveal_lag_slots: 151,
+            next_window_id: 3,
+            bump: 254,
+        }
+    }
+
+    #[test]
+    fn renders_the_authority_and_the_pending_proposed_authority_in_base58() {
+        let proposal = AuthorityProposal {
+            discriminator: PROPOSAL_DISCRIMINATOR,
+            proposed_authority: Pubkey::new_from_array([1; 32]),
+            bump: 252,
+        };
+
+        let rendered: Value =
+            serde_json::from_str(&render_authority(&state(), Some(&proposal)).unwrap())
+                .unwrap();
+
+        assert_eq!(
+            rendered,
+            json!({
+                "authority": "11111111111111111111111111111111",
+                "proposed_authority": Pubkey::new_from_array([1; 32]).to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn renders_a_null_proposed_authority_without_a_proposal() {
+        let rendered = render_authority(&state(), None).unwrap();
+
+        assert_eq!(
+            serde_json::from_str::<Value>(&rendered).unwrap(),
+            json!({
+                "authority": "11111111111111111111111111111111",
+                "proposed_authority": null,
+            })
+        );
+        assert!(
+            rendered.find("\"authority\"") < rendered.find("\"proposed_authority\""),
+            "{rendered}"
         );
     }
 

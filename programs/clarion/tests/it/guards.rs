@@ -258,7 +258,7 @@ async fn rejects_instruction_data_that_does_not_decode_exactly() {
     let mut truncated = init.clone();
     truncated.data.pop();
     let mut unknown_variant = init.clone();
-    unknown_variant.data[0] = 3;
+    unknown_variant.data[0] = 6;
     let mut empty = init;
     empty.data.clear();
 
