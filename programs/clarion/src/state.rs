@@ -23,6 +23,7 @@ pub const PROPOSAL_SIZE: usize = 34;
 #[derive(
     BorshSerialize, BorshDeserialize, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord,
 )]
+#[cfg_attr(feature = "idl", derive(codama::CodamaType))]
 pub enum Arm {
     FanOut,
     TipLane,
@@ -40,6 +41,7 @@ impl Arm {
 }
 
 #[derive(BorshSerialize, BorshDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "idl", derive(codama::CodamaType))]
 pub struct ArmAggregates {
     pub arm: Arm,
     pub tx_submitted: u32,
@@ -69,7 +71,11 @@ impl ArmAggregates {
 }
 
 #[derive(BorshSerialize, BorshDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "idl", derive(codama::CodamaAccount))]
+#[cfg_attr(feature = "idl", codama(discriminator(field = "discriminator")))]
+#[cfg_attr(feature = "idl", codama(seed(type = string(utf8), value = "clarion")))]
 pub struct State {
+    #[cfg_attr(feature = "idl", codama(default_value = 1))]
     pub discriminator: u8,
     pub authority: Pubkey,
     pub genesis_slot: u64,
@@ -96,7 +102,12 @@ impl State {
 }
 
 #[derive(BorshSerialize, BorshDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "idl", derive(codama::CodamaAccount))]
+#[cfg_attr(feature = "idl", codama(discriminator(field = "discriminator")))]
+#[cfg_attr(feature = "idl", codama(seed(type = string(utf8), value = "window")))]
+#[cfg_attr(feature = "idl", codama(seed(name = "windowId", type = number(u64))))]
 pub struct Window {
+    #[cfg_attr(feature = "idl", codama(default_value = 2))]
     pub discriminator: u8,
     pub window_id: u64,
     pub slot_start: u64,
@@ -104,6 +115,7 @@ pub struct Window {
     pub merkle_root: [u8; 32],
     pub commit_slot: u64,
     pub reveal_slot: u64,
+    #[cfg_attr(feature = "idl", codama(type = array(link("armAggregates"), 4)))]
     pub aggregates: [ArmAggregates; ARM_COUNT],
     pub bump: u8,
 }
@@ -129,7 +141,14 @@ impl Window {
 }
 
 #[derive(BorshSerialize, BorshDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "idl", derive(codama::CodamaAccount))]
+#[cfg_attr(feature = "idl", codama(discriminator(field = "discriminator")))]
+#[cfg_attr(
+    feature = "idl",
+    codama(seed(type = string(utf8), value = "authority_proposal"))
+)]
 pub struct AuthorityProposal {
+    #[cfg_attr(feature = "idl", codama(default_value = 3))]
     pub discriminator: u8,
     pub proposed_authority: Pubkey,
     pub bump: u8,

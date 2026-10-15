@@ -1,4 +1,5 @@
 pub mod account;
+pub mod event;
 pub mod instruction;
 pub mod json;
 pub mod merkle;
@@ -11,11 +12,12 @@ pub use account::{
 };
 pub use clarion::{
     ARM_AGGREGATES_SIZE, ARM_COUNT, Arm, ArmAggregates, AuthorityProposal, ClarionError,
-    ClarionInstruction, PROPOSAL_DISCRIMINATOR, PROPOSAL_SEED, PROPOSAL_SIZE,
-    STATE_DISCRIMINATOR, STATE_SEED, STATE_SIZE, State, WINDOW_DISCRIMINATOR,
-    WINDOW_SEED, WINDOW_SIZE, Window, proposal_address, state_address, window_address,
-    window_bounds,
+    ClarionEvent, ClarionInstruction, PROPOSAL_DISCRIMINATOR, PROPOSAL_SEED,
+    PROPOSAL_SIZE, STATE_DISCRIMINATOR, STATE_SEED, STATE_SIZE, State,
+    WINDOW_DISCRIMINATOR, WINDOW_SEED, WINDOW_SIZE, Window, proposal_address,
+    state_address, window_address, window_bounds,
 };
+pub use event::{EventError, decode_events};
 pub use instruction::{
     accept_authority, cancel_authority_proposal, commit, init, propose_authority, reveal,
 };

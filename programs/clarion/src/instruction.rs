@@ -7,26 +7,144 @@ use crate::{
 };
 
 #[derive(BorshSerialize, BorshDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "idl", derive(codama::CodamaInstructions))]
 pub enum ClarionInstruction {
+    #[cfg_attr(feature = "idl", codama(account(name = "authority", signer, writable)))]
+    #[cfg_attr(
+        feature = "idl",
+        codama(account(
+            name = "state",
+            writable,
+            default_value = pda("state", [])
+        ))
+    )]
+    #[cfg_attr(
+        feature = "idl",
+        codama(account(
+            name = "system_program",
+            default_value = program("system")
+        ))
+    )]
+    #[cfg_attr(feature = "idl", codama(account(name = "program", signer)))]
     Init {
         genesis_slot: u64,
         window_len: u64,
         min_reveal_lag_slots: u64,
     },
+    #[cfg_attr(feature = "idl", codama(account(name = "authority", signer, writable)))]
+    #[cfg_attr(
+        feature = "idl",
+        codama(account(
+            name = "state",
+            writable,
+            default_value = pda("state", [])
+        ))
+    )]
+    #[cfg_attr(
+        feature = "idl",
+        codama(account(
+            name = "window",
+            writable,
+            default_value = pda("window", [seed("windowId", argument("window_id"))])
+        ))
+    )]
+    #[cfg_attr(
+        feature = "idl",
+        codama(account(
+            name = "system_program",
+            default_value = program("system")
+        ))
+    )]
+    #[cfg_attr(feature = "idl", codama(account(name = "previous_window", optional)))]
+    #[cfg_attr(feature = "idl", codama(optional_account_strategy = omitted))]
     Commit {
         window_id: u64,
         slot_start: u64,
         slot_end: u64,
         merkle_root: [u8; 32],
     },
+    #[cfg_attr(feature = "idl", codama(account(name = "authority", signer)))]
+    #[cfg_attr(
+        feature = "idl",
+        codama(account(
+            name = "state",
+            default_value = pda("state", [])
+        ))
+    )]
+    #[cfg_attr(
+        feature = "idl",
+        codama(account(
+            name = "window",
+            writable,
+            default_value = pda("window", [seed("windowId", argument("window_id"))])
+        ))
+    )]
     Reveal {
         window_id: u64,
+        #[cfg_attr(feature = "idl", codama(type = array(link("armAggregates"), 4)))]
         aggregates: [ArmAggregates; ARM_COUNT],
     },
-    ProposeAuthority {
-        new_authority: Pubkey,
-    },
+    #[cfg_attr(feature = "idl", codama(account(name = "authority", signer, writable)))]
+    #[cfg_attr(
+        feature = "idl",
+        codama(account(
+            name = "state",
+            default_value = pda("state", [])
+        ))
+    )]
+    #[cfg_attr(
+        feature = "idl",
+        codama(account(
+            name = "authority_proposal",
+            writable,
+            default_value = pda("authorityProposal", [])
+        ))
+    )]
+    #[cfg_attr(
+        feature = "idl",
+        codama(account(
+            name = "system_program",
+            default_value = program("system")
+        ))
+    )]
+    ProposeAuthority { new_authority: Pubkey },
+    #[cfg_attr(
+        feature = "idl",
+        codama(account(name = "new_authority", signer, writable))
+    )]
+    #[cfg_attr(
+        feature = "idl",
+        codama(account(
+            name = "state",
+            writable,
+            default_value = pda("state", [])
+        ))
+    )]
+    #[cfg_attr(
+        feature = "idl",
+        codama(account(
+            name = "authority_proposal",
+            writable,
+            default_value = pda("authorityProposal", [])
+        ))
+    )]
     AcceptAuthority,
+    #[cfg_attr(feature = "idl", codama(account(name = "authority", signer, writable)))]
+    #[cfg_attr(
+        feature = "idl",
+        codama(account(
+            name = "state",
+            default_value = pda("state", [])
+        ))
+    )]
+    #[cfg_attr(
+        feature = "idl",
+        codama(account(
+            name = "authority_proposal",
+            writable,
+            default_value = pda("authorityProposal", [])
+        ))
+    )]
     CancelAuthorityProposal,
 }
 

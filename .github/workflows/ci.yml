@@ -69,6 +69,8 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
       - name: cargo deny check
         run: cargo deny check advisories bans licenses sources
+      - name: cargo deny check (program workspace, idl feature)
+        run: cargo deny --manifest-path programs/clarion/Cargo.toml --features idl --config deny.toml check advisories bans licenses sources
 
   program:
     name: program (build-sbf + tests)
@@ -113,6 +115,14 @@ jobs:
         env:
           SBF_OUT_DIR: ${{ github.workspace }}/programs/clarion/target/deploy
         run: cargo test --manifest-path programs/clarion/Cargo.toml
+
+      - name: cargo clippy --features idl (blocking)
+        run: cargo clippy --locked --manifest-path programs/clarion/Cargo.toml --all-targets --features idl -- -D warnings
+
+      - name: cargo test --features idl (idl drift + fidelity)
+        env:
+          SBF_OUT_DIR: ${{ github.workspace }}/programs/clarion/target/deploy
+        run: cargo test --locked --manifest-path programs/clarion/Cargo.toml --features idl
 
   verifiable-build:
     name: verifiable build (solana-verify)
