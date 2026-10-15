@@ -1266,14 +1266,18 @@ name = "clarion-program-client"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "bincode",
  "borsh",
  "clap",
  "clarion",
+ "reqwest",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "solana-account",
  "solana-commitment-config",
  "solana-keypair",
+ "solana-loader-v3-interface",
  "solana-program",
  "solana-program-test",
  "solana-rpc-client",
