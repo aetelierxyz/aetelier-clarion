@@ -2,8 +2,8 @@ use std::{error::Error, fs, path::PathBuf, process::ExitCode};
 
 use clap::{Parser, Subcommand, error::ErrorKind};
 use clarion_formulae::{
-    Binding, Inputs, Meta, bind, build, formulae_path, load_formulae, load_record,
-    load_window, parse_input, verify, write_record,
+    Binding, Declaration, Inputs, Meta, bind, build, formulae_path, load_formulae,
+    load_record, load_window, parse_input, verify, write_record,
 };
 use solana_keypair::Signature;
 use solana_program::pubkey::Pubkey;
@@ -83,8 +83,18 @@ enum Command {
             help = "Formulae directory"
         )]
         formulae_dir: PathBuf,
-        #[arg(long, value_name = "DIR", help = "Artifacts for layer 3")]
+        #[arg(
+            long,
+            value_name = "DIR",
+            help = "Artifacts for layer 3; files its withheld.json declares are not re-derived"
+        )]
         artifacts: Option<PathBuf>,
+        #[arg(
+            long,
+            requires = "artifacts",
+            help = "Ignore withheld.json and re-derive every field from the artifacts"
+        )]
+        ignore_withheld: bool,
     },
 }
 
@@ -182,6 +192,7 @@ fn run(cli: Cli) -> Result<Outcome, Box<dyn Error>> {
             formulae,
             formulae_dir,
             artifacts,
+            ignore_withheld,
         } => {
             let record = load_record(&attestation)?;
             let window = load_window(&window)?;
@@ -194,6 +205,11 @@ fn run(cli: Cli) -> Result<Outcome, Box<dyn Error>> {
                 text.as_deref().map_err(Clone::clone),
                 &window,
                 artifacts.as_deref(),
+                if ignore_withheld {
+                    Declaration::Ignore
+                } else {
+                    Declaration::Read
+                },
             );
             Ok(Outcome {
                 stdout: verification.to_string(),

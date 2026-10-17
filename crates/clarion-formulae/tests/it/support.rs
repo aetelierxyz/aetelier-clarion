@@ -137,12 +137,16 @@ pub fn write(path: &Path, text: &str) -> String {
 }
 
 pub fn built(test: &str) -> (PathBuf, PathBuf) {
+    built_with(test, &formulae_file())
+}
+
+pub fn built_with(test: &str, document: &Path) -> (PathBuf, PathBuf) {
     let dir = tmp(test);
     let record = dir.join("attestation.json");
     let output = formulae(&[
         "build",
         "--formulae",
-        formulae_file().to_str().unwrap(),
+        document.to_str().unwrap(),
         "--artifacts",
         fixtures().to_str().unwrap(),
         "--input",
@@ -177,4 +181,32 @@ pub fn bound(test: &str) -> (PathBuf, PathBuf, PathBuf) {
     ]);
     assert_eq!(code(&output), 0, "{}", stderr(&output));
     (dir, record, window)
+}
+
+pub fn declaration(files: &[(&str, &str)]) -> String {
+    let files: Vec<serde_json::Value> = files
+        .iter()
+        .map(|(filename, sha256)| serde_json::json!({"filename": filename, "sha256": sha256}))
+        .collect();
+    serde_json::json!({"schema": "formulae.withheld.v1", "files": files}).to_string()
+}
+
+pub fn edit_record(path: &Path, edit: impl FnOnce(&mut serde_json::Value)) {
+    let mut value: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+    edit(&mut value);
+    write(path, &serde_json::to_string_pretty(&value).unwrap());
+}
+
+pub fn published(dir: &Path, record: &Path) -> PathBuf {
+    fs::create_dir_all(dir).unwrap();
+    fs::copy(record, dir.join("attestation.json")).unwrap();
+    for file in ["tracer_params.v1.json", "fillrates.json"] {
+        fs::copy(fixtures().join(file), dir.join(file)).unwrap();
+    }
+    write(
+        &dir.join("withheld.json"),
+        &declaration(&[("corrected_ledger.json", CORRECTED_LEDGER_SHA256)]),
+    );
+    dir.join("attestation.json")
 }
