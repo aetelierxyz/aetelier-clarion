@@ -240,6 +240,10 @@ impl<'a> Artifacts<'a> {
         Ok(&self.bytes[file])
     }
 
+    pub fn sha256_hex(&mut self, file: &str) -> Result<String, String> {
+        Ok(merkle_root_hex(&sha256(self.bytes(file)?)))
+    }
+
     fn json(&mut self, file: &str) -> Result<&Value, String> {
         if !self.json.contains_key(file) {
             let value: Value =
@@ -281,15 +285,15 @@ pub fn evaluate(
         Source::FileSha256 { files } => {
             let mut entries = Vec::with_capacity(files.len());
             for file in files {
-                let digest = sha256(artifacts.bytes(file)?);
-                entries.push(serde_json::json!({
-                    "filename": file,
-                    "sha256": merkle_root_hex(&digest),
-                }));
+                entries.push(file_entry(file, &artifacts.sha256_hex(file)?));
             }
             Ok(Value::Array(entries))
         }
     }
+}
+
+pub fn file_entry(filename: &str, sha256: &str) -> Value {
+    serde_json::json!({"filename": filename, "sha256": sha256})
 }
 
 fn convert(kind: FieldType, value: &Value) -> Result<Value, String> {

@@ -361,7 +361,7 @@ fn is_identifier(text: &str) -> bool {
         })
 }
 
-fn is_file_name(file: &str) -> bool {
+pub(crate) fn is_file_name(file: &str) -> bool {
     !file.is_empty() && file != "." && file != ".." && !file.contains(['/', '\\'])
 }
 
