@@ -1,0 +1,73 @@
+{
+  "chain": {
+    "cluster": "devnet",
+    "commit_signature": "3kpEabm2PSKrtKi4EZ2KQVzUgfYgmCQrjAbotkcH9JUX8626XgqfV8TjYafKi27J6uiZA1APdnaV9QyqoKLN3dXs",
+    "commit_slot": 511952063,
+    "program_id": "4BoLZBXpFpBY8vgZrvh5ShYU5WgZT6qEVCdQyY7f35BC",
+    "reveal_signature": "3iGqCvRjDUafEggqVDFeCq58Ecq5MMPha46aZZ6sBcZWmvXzkS9NXxobPYCeqjH71G8C98L6TjJkMSvPDskVVbWj",
+    "reveal_slot": 511952445,
+    "window_id": 0
+  },
+  "formulae": {
+    "id": "d283858a6801c56d54fffa6ab4afdced38048313cf9c05e6cb8004ee503f2564",
+    "name": "trace-completed.v1"
+  },
+  "groups": [
+    {
+      "fields": {
+        "engine_version": "0.1.0",
+        "params_version": 1,
+        "source_commit": "363adfdfd81d24863c5a0039b04ad2a62ff99017"
+      },
+      "group": "system"
+    },
+    {
+      "fields": {
+        "corrected_n_kept": 11959,
+        "corrected_total_usd": -6205706422,
+        "paper_n": 14433,
+        "subject_id": "replay"
+      },
+      "group": "results"
+    },
+    {
+      "fields": {
+        "files": [
+          {
+            "filename": "tracer_params.v1.json",
+            "sha256": "ffc4b9c479b5db3f84d9961f0213c2b1e1c79d351c0807fc0e0ead2a23b5654b"
+          },
+          {
+            "filename": "corrected_ledger.json",
+            "sha256": "1fd27639deedd39171ddcd0326f806a6faf2292007d174e898d35b46416c6c4c"
+          },
+          {
+            "filename": "fillrates.json",
+            "sha256": "117ee4f777b64082f5e94f3588e79c939f635ad2797f7c8dee63970d9faecfb6"
+          }
+        ],
+        "input_sha256": {
+          "fills/para_IREN.csv": "f0a2c0526fb3dd329b93b2a2d55b348a8e0b7c181786cb01a5b87512090d3059",
+          "fills/xyz_AAPL.csv": "0daa05dec7ab99a0ae27fddf2fc900f7ddd955993c2c45c16b29b5729df46beb",
+          "fills/xyz_AMD.csv": "fcd0bb6aa0fc01b4a44a6d7793ec81c6b991fbe05b15211718aec874838df3c9",
+          "fills/xyz_NVDA.csv": "28f8d69820afc517d94b4d0710797b09c30a7d481dbc6b3f975f79bc224035ee",
+          "fills/xyz_TSLA.csv": "38de9398fa8eb163c8a593272fb70f67e03cd125a53c87eec568634ed7b57208"
+        }
+      },
+      "group": "artifacts"
+    }
+  ],
+  "leaves": [
+    "5c8792cb2a8c212e8c9cc8160f9f5610f7f232f1b7dcec6cd9a2955fedbc5d34",
+    "c65d4e745876955a345ddfb8e28b19a84a6315ac40616c44876641cf5de15cb0",
+    "95d128305e03d9dce43901fbd127d044c77822ee5602ac984cd1ec1255b5e5f1",
+    "175dbd37e4128c0bfc5087e8a64068e49e0d53fe9f8c87b5b6dcad5086f95451"
+  ],
+  "meta": {
+    "built_at_us": 1792210597054750,
+    "source_repo": "https://github.com/aetelierxyz/aetelier-tracer",
+    "tool_version": "0.1.0"
+  },
+  "root": "07788ad6544b703c629f01c1b2c6c758d102a877923fc8f85bbb2d085843273a",
+  "schema": "formulae.attestation.v1"
+}

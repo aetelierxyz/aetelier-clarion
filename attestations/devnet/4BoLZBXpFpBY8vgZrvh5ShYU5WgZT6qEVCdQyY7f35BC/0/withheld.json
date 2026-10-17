@@ -1,0 +1,9 @@
+{
+  "schema": "formulae.withheld.v1",
+  "files": [
+    {
+      "filename": "corrected_ledger.json",
+      "sha256": "1fd27639deedd39171ddcd0326f806a6faf2292007d174e898d35b46416c6c4c"
+    }
+  ]
+}
