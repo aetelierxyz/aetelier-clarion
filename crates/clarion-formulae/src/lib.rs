@@ -2,6 +2,7 @@ pub mod canonical;
 pub mod formulae;
 pub mod record;
 pub mod verify;
+pub mod withheld;
 
 pub use canonical::{
     CanonicalError, canonical_bytes, canonical_sha256, pretty, sha256, sorted,
@@ -14,10 +15,14 @@ pub use formulae::{
 pub use record::{
     ARM_NAMES, Artifacts, Binding, Chain, FormulaeRef, GroupPreimage, Inputs, Meta,
     Problem, RECORD_SCHEMA, REPORT_SCHEMA, Record, RecordError, Report, Root, WindowId,
-    WindowJson, bind, build, evaluate, leaves_of, load_record, load_window, micro,
-    parse_input, read_record, read_window, root_of, window_matches, write_record,
+    WindowJson, bind, build, evaluate, file_entry, leaves_of, load_record, load_window,
+    micro, parse_input, read_record, read_window, root_of, window_matches, write_record,
 };
 pub use verify::{
-    LayerOutcome, LayerResult, RecordState, Verification, layer_artifacts, layer_chain,
-    layer_formulae, verify,
+    Declaration, LayerOutcome, LayerResult, Partial, RecordState, Verification,
+    layer_artifacts, layer_chain, layer_formulae, verify,
+};
+pub use withheld::{
+    WITHHELD_FILE, WITHHELD_SCHEMA, Withheld, WithheldError, WithheldFile, load_withheld,
+    read_withheld,
 };
