@@ -1,0 +1,69 @@
+{
+  "chain": {
+    "cluster": "devnet",
+    "commit_signature": "33T2QbexDUPun68KEYpgATBhxJQgdAg3TZ3GAR2ymf2WZkR13DstPXfNWdt2ajp68vfH1X2cJ8MALErkHiWm87qK",
+    "commit_slot": 518803003,
+    "program_id": "BjLoUKJ48wxVZXPEuR5JSmuXSkC5YqBvtN5i2cT51y3e",
+    "reveal_signature": "5Y3W9QJVcMTSZFoGiEZeEPvcsoAMqyvKBihfviUUXJ95RFQL34aiL3oPWSM5X7C2H1Gs31vQkPb1t6uRtFspgzMv",
+    "reveal_slot": 518803170,
+    "window_id": 0
+  },
+  "formulae": {
+    "id": "d283858a6801c56d54fffa6ab4afdced38048313cf9c05e6cb8004ee503f2564",
+    "name": "trace-completed.v1"
+  },
+  "groups": [
+    {
+      "fields": {
+        "engine_version": "0.1.0",
+        "params_version": 1,
+        "source_commit": "synthetic"
+      },
+      "group": "system"
+    },
+    {
+      "fields": {
+        "corrected_n_kept": 1000,
+        "corrected_total_usd": -125456790,
+        "paper_n": 1200,
+        "subject_id": "demo"
+      },
+      "group": "results"
+    },
+    {
+      "fields": {
+        "files": [
+          {
+            "filename": "tracer_params.v1.json",
+            "sha256": "ee330eb1670d53fcf5517902892ea0b80b0ac1d1a7a82a3e4ddb7a5a3dbb598b"
+          },
+          {
+            "filename": "corrected_ledger.json",
+            "sha256": "ee44fc87dd6599c06dd9d314371d53ed801891b1b40b99bc348031862b48a002"
+          },
+          {
+            "filename": "fillrates.json",
+            "sha256": "1690334c4fab8cc19270418ffec317e484c995a97c95ef0e59c816a2a9467043"
+          }
+        ],
+        "input_sha256": {
+          "fills/DEMO_A.csv": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "fills/DEMO_B.csv": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      },
+      "group": "artifacts"
+    }
+  ],
+  "leaves": [
+    "5c8792cb2a8c212e8c9cc8160f9f5610f7f232f1b7dcec6cd9a2955fedbc5d34",
+    "384ec7d73a8e8bd378101887144ab236e2cac77b165e2b4a847d17486d85a3a4",
+    "3ad4a7e82610339172a546ef7292036ab0f8d4a675c776233335a996b4b93d3c",
+    "1f11aaf86d26f4a81b5920f975aec1e8193ca45df0f030b19c8344a5d16ad789"
+  ],
+  "meta": {
+    "built_at_us": 1793849377025271,
+    "tool_version": "0.1.0"
+  },
+  "root": "a55bf7f11435fa22e7843ecc9553fc69f8630f71560858c130255c2768164390",
+  "schema": "formulae.attestation.v1"
+}

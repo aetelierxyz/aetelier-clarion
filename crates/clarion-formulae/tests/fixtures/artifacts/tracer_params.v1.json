@@ -1,0 +1,38 @@
+{
+  "schema": "tracer.params.v1",
+  "params_version": 1,
+  "tau_secs": 30.0,
+  "hold_ms": 600000,
+  "notional_usd": 500.0,
+  "exit_staleness_ms": 150000,
+  "t_split_ms": 1767225600000,
+  "decile_thresholds": [
+    -0.8,
+    -0.6,
+    -0.4,
+    -0.2,
+    0.0,
+    0.2,
+    0.4,
+    0.6,
+    0.8
+  ],
+  "symbols": [
+    {
+      "stem": "DEMO_A",
+      "bar_threshold_usd": 1000.0,
+      "maker_fee_leg_bps": -0.01,
+      "taker_fee_leg_bps": 1.0
+    },
+    {
+      "stem": "DEMO_B",
+      "bar_threshold_usd": 2500.0,
+      "maker_fee_leg_bps": 0.02,
+      "taker_fee_leg_bps": 1.5
+    }
+  ],
+  "input_sha256": {
+    "fills/DEMO_A.csv": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "fills/DEMO_B.csv": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  }
+}

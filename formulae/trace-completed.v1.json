@@ -1,0 +1,114 @@
+{
+  "schema": "formulae.v1",
+  "name": "trace-completed.v1",
+  "canonicalization": "json_sorted_keys_no_ws.sha256",
+  "hash": "sha256",
+  "prefixes": {
+    "leaf": 0,
+    "node": 1,
+    "empty": 2
+  },
+  "publication": "preimages",
+  "leaf_mode": "per_group",
+  "reveal": "zero_arms",
+  "groups": [
+    {
+      "name": "system",
+      "fields": [
+        {
+          "name": "engine_version",
+          "type": "string",
+          "source": {
+            "json_pointer": {
+              "file": "corrected_ledger.json",
+              "pointer": "/engine_version"
+            }
+          }
+        },
+        {
+          "name": "params_version",
+          "type": "u64",
+          "source": {
+            "json_pointer": {
+              "file": "corrected_ledger.json",
+              "pointer": "/params_version"
+            }
+          }
+        },
+        {
+          "name": "source_commit",
+          "type": "string",
+          "source": "input"
+        }
+      ]
+    },
+    {
+      "name": "results",
+      "fields": [
+        {
+          "name": "subject_id",
+          "type": "string",
+          "source": "input"
+        },
+        {
+          "name": "paper_n",
+          "type": "u64",
+          "source": {
+            "json_pointer": {
+              "file": "corrected_ledger.json",
+              "pointer": "/paper/n"
+            }
+          }
+        },
+        {
+          "name": "corrected_n_kept",
+          "type": "u64",
+          "source": {
+            "json_pointer": {
+              "file": "corrected_ledger.json",
+              "pointer": "/corrected/n_kept"
+            }
+          }
+        },
+        {
+          "name": "corrected_total_usd",
+          "type": "i64_micro",
+          "source": {
+            "json_pointer": {
+              "file": "corrected_ledger.json",
+              "pointer": "/corrected/stats/total"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "artifacts",
+      "fields": [
+        {
+          "name": "files",
+          "type": "list",
+          "source": {
+            "file_sha256": {
+              "files": [
+                "tracer_params.v1.json",
+                "corrected_ledger.json",
+                "fillrates.json"
+              ]
+            }
+          }
+        },
+        {
+          "name": "input_sha256",
+          "type": "map",
+          "source": {
+            "json_pointer": {
+              "file": "corrected_ledger.json",
+              "pointer": "/input_sha256"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

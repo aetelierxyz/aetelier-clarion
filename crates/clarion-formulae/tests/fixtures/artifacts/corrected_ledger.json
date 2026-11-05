@@ -1,0 +1,22 @@
+{
+  "schema": "tracer.corrected.v1",
+  "mode": "replay",
+  "engine_version": "0.1.0",
+  "params_version": 1,
+  "input_sha256": {
+    "fills/DEMO_A.csv": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "fills/DEMO_B.csv": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "paper": {
+    "n": 1200,
+    "stats": {
+      "total": 250.125
+    }
+  },
+  "corrected": {
+    "n_kept": 1000,
+    "stats": {
+      "total": -125.4567896
+    }
+  }
+}
