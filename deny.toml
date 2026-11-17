@@ -10,6 +10,7 @@ ignore = [
     "RUSTSEC-2026-0391",
     "RUSTSEC-2026-0398",
     "RUSTSEC-2026-0403",
+    { id = "RUSTSEC-2026-0543", reason = "chrono is unmaintained, not vulnerable; no maintained release or safe upgrade exists" },
 ]
 
 [bans]
